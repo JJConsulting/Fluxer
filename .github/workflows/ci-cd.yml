@@ -10,21 +10,23 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-      - name: Validate release version
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          version=$(dotnet msbuild src/JJConsulting.Fluxer.Client -getProperty:Version)
-          test "$RELEASE_TAG" = "v$version"
       - run: dotnet restore JJConsulting.Fluxer.slnx
       - run: dotnet build JJConsulting.Fluxer.slnx -c Release --no-restore -p:ContinuousIntegrationBuild=true
       - run: dotnet test JJConsulting.Fluxer.slnx -c Release --no-build
+      - name: Read project version
+        id: version
+        shell: bash
+        run: |
+          version=$(dotnet msbuild src/JJConsulting.Fluxer.Client/JJConsulting.Fluxer.Client.csproj -p:Configuration=Release -getProperty:Version)
+          test -n "$version"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
       - run: dotnet pack src/JJConsulting.Fluxer.Client -c Release --no-build -o artifacts
       - uses: actions/upload-artifact@v4
         with:
@@ -36,7 +38,7 @@ jobs:
 
   nuget:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: nuget
     permissions:
@@ -62,7 +64,7 @@ jobs:
 
   docker:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -80,7 +82,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=semver,pattern={{version}}
+            type=raw,value=${{ needs.build.outputs.version }}
           flavor: latest=false
       - uses: docker/build-push-action@v6
         with:

@@ -20,8 +20,43 @@ public sealed class AuthenticationTests
         Assert.True(result.Failed);
         var failures = result.Failures!.ToArray();
         Assert.Equal(5, failures.Length);
-        foreach (var setting in new[] { "PublicUrl", "ApiBaseUrl", "ClientRedirectUri", "ClientId", "ClientSecret" })
+        foreach (var setting in new[] { "PublicUrl", "ApiBaseUrl", "AllowedClientRedirectUris", "ClientId", "ClientSecret" })
             Assert.Single(failures, failure => failure.StartsWith($"Fluxer:{setting} "));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("http://client.test/callback")]
+    [InlineData("https://user:password@client.test/callback")]
+    [InlineData("https://client.test/callback#fragment")]
+    [InlineData("invalid")]
+    public void Invalid_Allowed_Callback_Among_Valid_Entries_Is_Rejected(string? callback)
+    {
+        using var factory = new McpFactory();
+        var validator = Assert.Single(factory.Services.GetServices<IValidateOptions<FluxerOptions>>());
+        var options = new FluxerOptions
+        {
+            ApiBaseUrl = "https://fluxer.test/api", ClientId = "123", ClientSecret = "fixture-secret",
+            AllowedClientRedirectUris = [McpFactory.Callback, callback!]
+        };
+        Assert.True(validator.Validate(Options.DefaultName, options).Failed);
+    }
+
+    [Fact]
+    public void Missing_Or_Oversized_Allowed_Callbacks_Are_Rejected()
+    {
+        using var factory = new McpFactory();
+        var validator = Assert.Single(factory.Services.GetServices<IValidateOptions<FluxerOptions>>());
+        var options = new FluxerOptions
+        {
+            ApiBaseUrl = "https://fluxer.test/api", ClientId = "123", ClientSecret = "fixture-secret"
+        };
+        Assert.True(validator.Validate(Options.DefaultName, options).Failed);
+        options.AllowedClientRedirectUris = null!;
+        Assert.True(validator.Validate(Options.DefaultName, options).Failed);
+        options.AllowedClientRedirectUris = [McpFactory.Callback, "https://client.test/" + new string('a', 2048)];
+        Assert.True(validator.Validate(Options.DefaultName, options).Failed);
     }
 
     [Fact]

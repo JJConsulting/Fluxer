@@ -7,7 +7,7 @@ public sealed class FluxerOptions
     public string? PublicUrl { get; set; }
     public string ApiBaseUrl { get; set; } = "";
     public string ClientId { get; set; } = "";
-    public string ClientRedirectUri { get; set; } = "";
+    public string[] AllowedClientRedirectUris { get; set; } = [];
     public string ClientSecret { get; set; } = "";
     public string GetPublicUrl(HttpRequest request) =>
         string.IsNullOrEmpty(PublicUrl) ? $"{request.Scheme}://{request.Host}" : PublicUrl;

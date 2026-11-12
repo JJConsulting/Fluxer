@@ -27,12 +27,12 @@ internal sealed class FluxerOptionsValidator : IValidateOptions<FluxerOptions>
         else if (api.Query != "" || api.Fragment != "" || options.ApiBaseUrl.EndsWith('/'))
             errors.Add(apiBaseUrlError);
 
-        const string redirectUriError = "Fluxer:ClientRedirectUri must be an absolute HTTPS URL without credentials or fragment, with at most 2048 characters.";
-        if (!Uri.TryCreate(options.ClientRedirectUri, UriKind.Absolute, out var redirect))
-            errors.Add(redirectUriError);
-        else if (redirect.Scheme != "https" || redirect.Host.Length == 0 || redirect.UserInfo != "")
-            errors.Add(redirectUriError);
-        else if (redirect.Fragment != "" || options.ClientRedirectUri.Length > 2048)
+        const string redirectUriError = "Fluxer:AllowedClientRedirectUris must contain at least one absolute HTTPS URL without credentials or fragment, each with at most 2048 characters.";
+        if (options.AllowedClientRedirectUris is not { Length: > 0 } ||
+            options.AllowedClientRedirectUris.Any(value =>
+                !Uri.TryCreate(value, UriKind.Absolute, out var redirect) ||
+                redirect.Scheme != "https" || redirect.Host.Length == 0 || redirect.UserInfo != "" ||
+                redirect.Fragment != "" || value.Length > 2048))
             errors.Add(redirectUriError);
 
         if (!FluxerOptions.IsId(options.ClientId))

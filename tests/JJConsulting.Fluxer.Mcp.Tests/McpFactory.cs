@@ -26,7 +26,7 @@ public sealed class McpFactory(string? publicUrl = null) : WebApplicationFactory
         {
             ["AllowedHosts"] = "mcp.test", ["Fluxer:PublicUrl"] = publicUrl ?? "",
             ["Fluxer:ApiBaseUrl"] = "https://fluxer.test/api", ["Fluxer:ClientId"] = "123",
-            ["Fluxer:ClientSecret"] = "fixture-secret", ["Fluxer:ClientRedirectUri"] = Callback, ["Fluxer:AdminApiKey"] = "fixture-admin"
+            ["Fluxer:ClientSecret"] = "fixture-secret", ["Fluxer:AllowedClientRedirectUris:0"] = Callback, ["Fluxer:AdminApiKey"] = "fixture-admin"
         }) builder.UseSetting(key, value);
         builder.ConfigureServices(services =>
         {

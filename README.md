@@ -104,10 +104,10 @@ Prerequisites: Git, Docker Engine with the Compose plugin (`docker compose`), an
    Fluxer__ClientSecret=YOUR_CLIENT_SECRET
    Fluxer__AdminApiKey=YOUR_ADMIN_API_KEY
    Fluxer__PublicUrl=https://mcp.example.com
-   Fluxer__ClientRedirectUri=https://chatgpt.com/connector_platform_oauth_redirect
+   Fluxer__AllowedClientRedirectUris__0=https://chatgpt.com/connector_platform_oauth_redirect
    ```
 
-   Replace `mcp.example.com` with your public hostname. `Fluxer__ApiBaseUrl` must use HTTPS and omit `/v1` and the trailing slash. `Fluxer__PublicUrl` must be the public HTTPS origin, without a path or trailing slash. Use the exact ChatGPT callback for `Fluxer__ClientRedirectUri` (see **Connect ChatGPT** below). Keep `.env` private and out of Git.
+   Replace `mcp.example.com` with your public hostname. `Fluxer__ApiBaseUrl` must use HTTPS and omit `/v1` and the trailing slash. `Fluxer__PublicUrl` must be the public HTTPS origin, without a path or trailing slash. Use the exact ChatGPT callback for `Fluxer__AllowedClientRedirectUris__0` (see **Connect ChatGPT** below). Keep `.env` private and out of Git.
 
 3. In your Fluxer OAuth application, register `https://mcp.example.com/auth/fluxer/callback` as a redirect URI.
 
@@ -207,12 +207,14 @@ Create `src/JJConsulting.Fluxer.Mcp/appsettings.Development.json` (git-ignored):
     "ClientSecret": "YOUR_CLIENT_SECRET",
     "AdminApiKey": "YOUR_ADMIN_API_KEY",
     "PublicUrl": "https://YOUR_PUBLIC_HOST",
-    "ClientRedirectUri": "https://chatgpt.com/connector_platform_oauth_redirect"
+    "AllowedClientRedirectUris": ["https://chatgpt.com/connector_platform_oauth_redirect"]
   }
 }
 ```
 
 `ApiBaseUrl` must use HTTPS and omit `/v1` and the trailing slash. `PublicUrl` is the public HTTPS origin, without a path or trailing slash. Keep credentials on the server and out of Git.
+
+`AllowedClientRedirectUris` accepts multiple exact callback URLs, one per client. For environment variables, use `Fluxer__AllowedClientRedirectUris__0`, `Fluxer__AllowedClientRedirectUris__1`, etc. Migration: replace the former `ClientRedirectUri` string with this array; the old setting is no longer used.
 
 ```bash
 dotnet dev-certs https --trust
@@ -243,7 +245,7 @@ Use the tunnel hostname in `AllowedHosts` and its HTTPS origin in `PublicUrl`. R
    | Registration URL | Empty |
    | Scope | `identify` |
 
-3. Set `Fluxer:ClientRedirectUri` to the **exact callback displayed by ChatGPT** and restart the server if it changes. This differs from the Fluxer callback in step 1.
+3. Add the **exact callback displayed by ChatGPT** to `Fluxer:AllowedClientRedirectUris` and restart the server if it changes. This differs from the Fluxer callback in step 1.
 4. Connect, sign in to Fluxer, and select the app in a conversation.
 
 If the tunnel hostname changes, update `AllowedHosts`, `PublicUrl`, the Fluxer callback, and the MCP URL in ChatGPT. Refresh ChatGPT's tool list after server tool changes.

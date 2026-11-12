@@ -15,7 +15,7 @@ public sealed class OAuthBridge(IOptions<FluxerOptions> settings, IHttpClientFac
 
     public const string CallbackPath = "/auth/fluxer/callback";
 
-    private sealed record Login(string State, string Challenge, string Callback, string Correlation)
+    private sealed record Login(string State, string Challenge, string Callback, string Correlation, string ClientRedirectUri)
     {
         public int Used;
     }
@@ -29,7 +29,7 @@ public sealed class OAuthBridge(IOptions<FluxerOptions> settings, IHttpClientFac
     {
         var query = context.Request.Query;
         if (query.Any(p => p.Value.Count != 1) || query["client_id"] != options.ClientId ||
-            query["redirect_uri"] != options.ClientRedirectUri)
+            !options.AllowedClientRedirectUris.Contains(query["redirect_uri"].ToString(), StringComparer.Ordinal))
             return Error("invalid_request");
         var state = query["state"].ToString();
         var challenge = query["code_challenge"].ToString();
@@ -47,7 +47,7 @@ public sealed class OAuthBridge(IOptions<FluxerOptions> settings, IHttpClientFac
         if (query["scope"] != FluxerOptions.Scope) return Error("invalid_scope");
 
         var key = Random();
-        var login = new Login(state, challenge, options.GetPublicUrl(context.Request) + CallbackPath, Random());
+        var login = new Login(state, challenge, options.GetPublicUrl(context.Request) + CallbackPath, Random(), query["redirect_uri"].ToString());
         if (!Store("login:" + key, login, TimeSpan.FromMinutes(10)))
             return Error("temporarily_unavailable", 503);
         context.Response.Cookies.Append("__Host-FluxerMcp-" + key, login.Correlation,
@@ -96,7 +96,7 @@ public sealed class OAuthBridge(IOptions<FluxerOptions> settings, IHttpClientFac
             else response["error"] = "temporarily_unavailable";
         }
 
-        return Results.Redirect(QueryHelpers.AddQueryString(options.ClientRedirectUri, response));
+        return Results.Redirect(QueryHelpers.AddQueryString(login.ClientRedirectUri, response));
     }
 
     public async Task<IResult> TokenAsync(HttpContext context)
@@ -123,7 +123,7 @@ public sealed class OAuthBridge(IOptions<FluxerOptions> settings, IHttpClientFac
             if (!cache.TryGetValue<Code>("code:" + code, out var pending) || pending is null)
                 return Error("invalid_grant");
 
-            if (form["redirect_uri"] != options.ClientRedirectUri)
+            if (form["redirect_uri"] != pending.Login.ClientRedirectUri)
                 return Error("invalid_grant");
 
             if (pending.Login.Callback != options.GetPublicUrl(context.Request) + CallbackPath)

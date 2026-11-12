@@ -1,4 +1,6 @@
 using System.Net;
+using JJConsulting.Fluxer.Mcp.Authentication;
+using Microsoft.Extensions.DependencyInjection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -84,6 +86,51 @@ public sealed class OAuthBridgeTests
         Assert.DoesNotContain("fixture-secret", string.Join('\n', factory.Logs));
         Assert.DoesNotContain("fixture-code", string.Join('\n', factory.Logs));
         Assert.DoesNotContain("fixture-access", string.Join('\n', factory.Logs));
+    }
+
+    [Fact]
+    public async Task Multiple_Callbacks_Keep_Concurrent_Logins_And_Codes_Bound_To_Their_Destination()
+    {
+        const string otherCallback = "https://other-client.test/callback";
+        using var factory = new McpFactory();
+        using var configured = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+            services.PostConfigure<FluxerOptions>(options =>
+                options.AllowedClientRedirectUris = [McpFactory.Callback, otherCallback])));
+        using var browser = configured.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri(McpFactory.Origin), AllowAutoRedirect = false, HandleCookies = true
+        });
+        var firstState = await BeginAsync(browser);
+        var parameters = Parameters();
+        parameters["redirect_uri"] = otherCallback;
+        using var secondLogin = await browser.GetAsync(QueryHelpers.AddQueryString("/oauth/authorize", parameters));
+        Assert.Equal(HttpStatusCode.Redirect, secondLogin.StatusCode);
+        var secondState = QueryHelpers.ParseQuery(secondLogin.Headers.Location!.Query)["state"].ToString();
+
+        foreach (var (state, destination, wrongDestination) in new[]
+                 {
+                     (secondState, otherCallback, McpFactory.Callback),
+                     (firstState, McpFactory.Callback, otherCallback)
+                 })
+        {
+            using var callback = await browser.GetAsync("/auth/fluxer/callback?code=fixture-code&state=" + state);
+            Assert.Equal(HttpStatusCode.Redirect, callback.StatusCode);
+            Assert.Equal(destination, callback.Headers.Location!.GetLeftPart(UriPartial.Path));
+            var code = QueryHelpers.ParseQuery(callback.Headers.Location.Query)["code"].ToString();
+            var form = TokenForm(code);
+            form["redirect_uri"] = wrongDestination;
+            using var invalid = await browser.PostAsync("/oauth/token", new FormUrlEncodedContent(form));
+            Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+            form["redirect_uri"] = destination;
+            using var valid = await browser.PostAsync("/oauth/token", new FormUrlEncodedContent(form));
+            Assert.Equal(HttpStatusCode.OK, valid.StatusCode);
+        }
+
+        parameters["redirect_uri"] = "https://attacker.test/callback";
+        using var rejected = await browser.GetAsync(QueryHelpers.AddQueryString("/oauth/authorize", parameters));
+        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+        Assert.Null(rejected.Headers.Location);
+        Assert.Equal(2, factory.Fluxer.TokenExchanges);
     }
 
     [Theory]

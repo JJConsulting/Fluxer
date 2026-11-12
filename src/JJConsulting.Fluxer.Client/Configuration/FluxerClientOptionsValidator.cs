@@ -32,6 +32,9 @@ internal sealed class FluxerClientOptionsValidator : IValidateOptions<FluxerClie
         if (options.MaxDmPages is < 1 or > 1000)
             errors.Add("Fluxer:MaxDmPages must be between 1 and 1000.");
 
-        return errors.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(errors);
+        if (errors.Count == 0)
+            return ValidateOptionsResult.Success;
+        
+        return ValidateOptionsResult.Fail(errors);
     }
 }

@@ -15,7 +15,7 @@ public sealed class FluxerAuthenticationHandler(
     IHttpClientFactory clients,
     IOptions<FluxerOptions> options) : AuthenticationHandler<AuthenticationSchemeOptions>(schemes, logger, encoder)
 {
-    private readonly FluxerOptions fluxer = options.Value;
+    private readonly FluxerOptions _fluxerOptions = options.Value;
 
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
@@ -36,10 +36,10 @@ public sealed class FluxerAuthenticationHandler(
             using var client = clients.CreateClient(FluxerOptions.Scheme);
             using var form = new FormUrlEncodedContent(new Dictionary<string, string>
             {
-                ["token"] = header.Parameter, ["client_id"] = fluxer.ClientId,
-                ["client_secret"] = fluxer.ClientSecret
+                ["token"] = header.Parameter, ["client_id"] = _fluxerOptions.ClientId,
+                ["client_secret"] = _fluxerOptions.ClientSecret
             });
-            using var response = await client.PostAsync(fluxer.ApiBaseUrl + "/v1/oauth2/introspect", form,
+            using var response = await client.PostAsync(_fluxerOptions.ApiBaseUrl + "/v1/oauth2/introspect", form,
                 Context.RequestAborted);
             if (!response.IsSuccessStatusCode)
                 return AuthenticateResult.Fail("Fluxer authentication unavailable.");
@@ -48,7 +48,7 @@ public sealed class FluxerAuthenticationHandler(
             if (token is null || !token.Active)
                 return AuthenticateResult.Fail("Invalid Fluxer access token.");
 
-            if (token.ClientId != fluxer.ClientId || token.TokenType != "Bearer")
+            if (token.ClientId != _fluxerOptions.ClientId || token.TokenType != "Bearer")
                 return AuthenticateResult.Fail("Invalid Fluxer access token.");
 
             if (!FluxerOptions.IsId(token.Subject))
@@ -74,7 +74,7 @@ public sealed class FluxerAuthenticationHandler(
     {
         Response.StatusCode = StatusCodes.Status401Unauthorized;
         Response.Headers.WWWAuthenticate =
-            $"Bearer resource_metadata=\"{fluxer.GetPublicUrl(Request)}/.well-known/oauth-protected-resource\", scope=\"{FluxerOptions.Scope}\"";
+            $"Bearer resource_metadata=\"{_fluxerOptions.GetPublicUrl(Request)}/.well-known/oauth-protected-resource\", scope=\"{FluxerOptions.Scope}\"";
         return Task.CompletedTask;
     }
 }

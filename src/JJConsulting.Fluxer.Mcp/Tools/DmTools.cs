@@ -113,8 +113,11 @@ public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient adm
         var result =
             await admin.GetIndividualDmPageAsync(userId, new FluxerPageRequest(limit, before: before),
                 cancellationToken);
-        if (result is not FluxerDmPage page) throw Unavailable();
-        if (page.Channels.Any(c => !IsAuthorized(c, userId))) throw Denied();
+        if (result is not FluxerDmPage page)
+            throw Unavailable();
+        if (page.Channels.Any(c => !IsAuthorized(c, userId)))
+            throw Denied();
+        
         var conversations = new List<DmConversationActivity>();
         foreach (var channel in page.Channels)
         {

@@ -61,10 +61,21 @@ if (dmResult is FluxerDmPage page)
         Console.WriteLine(channel.ChannelId);
 ```
 
-`ApiBaseUrl` must use HTTPS and omit `/v1`. Keep the Admin API key on the server; your application must authorize access to each user and channel. `FluxerAdminClient` also provides `GetMessagesAsync` and `SearchMessagesAsync`.
+`ApiBaseUrl` must use HTTPS and omit `/v1`. Keep the Admin API key on the server; your application must authorize access to each user and channel. `FluxerAdminClient` also provides `GetMessagesAsync`, `SearchMessagesAsync`, `GetUserGuildPageAsync` and `GetGuildAsync`. Guild queries return typed models through the same transport and error handling as DM queries.
 
 
 ## MCP Server
+
+### Authentication and API access
+
+```mermaid
+flowchart LR
+    user["User"] -->|Sign in and authorize| oauth["Fluxer OAuth 2.0"]
+    oauth -->|Authentication callback| mcp["JJConsulting.Fluxer.Mcp"]
+    mcp -->|Authorized requests| api["Fluxer REST API"]
+```
+
+Fluxer OAuth identifies the signed-in user. The MCP server uses that identity to authorize access to conversations and calls the Fluxer API with server-side credentials.
 
 Release tags (`v*`) publish the Docker image to `ghcr.io/jjconsulting/fluxer-mcp:<version>` (without the `v` prefix).
 
@@ -250,7 +261,11 @@ Connection failing? Check that public `/health` and `/.well-known/oauth-authoriz
 | `get_my_dm_messages` | Read a DM, optionally filtering by date. |
 | `get_my_dm_activity` | Read messages across your DMs for a period. |
 | `search_my_dm_messages` | Search text in one DM. |
+| `list_my_guilds` | List guilds you belong to; continue with `NextAfter`. |
+| `list_my_guild_channels` | List readable non-NSFW text channels in a guild you own. |
+| `get_my_guild_messages` | Read a guild channel; follow `NextBefore` while `HasMore`. |
 
+- Guild tools additionally require Admin ACLs `user:list:guilds` and `guild:lookup` on the key and its owner. Guild membership is verified using the authenticated user ID. Channel listing and reading currently require guild ownership: the Admin API omits channel permission overrides, so access for other members cannot be verified. NSFW guilds and channels are excluded.
 - Dates require ISO-8601 timestamps with a UTC offset. For a day in São Paulo: `start: "2026-11-11T00:00:00-03:00"`, `end: "2026-11-12T00:00:00-03:00"`. Start is inclusive; end is exclusive.
 - Activity returns up to 100 messages per channel. Continue with `NextChannelBefore` for more channels; use `get_my_dm_messages` with the same dates and each conversation's `NextBefore` while `HasMore` is true.
 - Search returns at most 100 matches (`Truncated` indicates more). Empty results may mean the instance has no search index.

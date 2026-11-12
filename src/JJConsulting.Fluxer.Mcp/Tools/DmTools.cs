@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.Globalization;
-using System.Security.Claims;
 using JJConsulting.Fluxer.Client;
 using JJConsulting.Fluxer.Client.Models;
 using JJConsulting.Fluxer.Mcp.Authentication;
@@ -11,7 +10,7 @@ using ModelContextProtocol.Server;
 namespace JJConsulting.Fluxer.Mcp.Tools;
 
 [McpServerToolType]
-public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient admin)
+public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient admin) : FluxerToolBase(accessor)
 {
     [McpServerTool(Name = "list_my_dm_channels", ReadOnly = true, OpenWorld = false, UseStructuredContent = true)]
     [McpMeta("securitySchemes", JsonValue = """[{"type":"oauth2","scopes":["identify"]}]""")]
@@ -244,18 +243,6 @@ public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient adm
     private static string? Name(string? displayName, string? username) =>
         string.IsNullOrWhiteSpace(displayName) ? username : displayName;
 
-    private string UserId()
-    {
-        var user = accessor.HttpContext?.User;
-        var id = user?.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (user?.Identity?.IsAuthenticated != true)
-            throw new McpException("Authentication with identify scope is required.");
-
-        if (!user.HasClaim("scope", FluxerOptions.Scope) || !FluxerOptions.IsId(id))
-            throw new McpException("Authentication with identify scope is required.");
-        return id!;
-    }
-
     private static bool IsAuthorized(FluxerDmChannel channel, string userId)
     {
         if (channel is not { ChannelType: 1, ChannelNsfw: false, RecipientIds.Count: 2 }) 
@@ -265,15 +252,6 @@ public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient adm
             return false;
         
         return channel.RecipientIds.Contains(userId);
-    }
-
-    private static void ValidatePage(int limit, int maximum, string? before)
-    {
-        if (limit < 1 || limit > maximum)
-            throw new McpException("Invalid pagination.");
-
-        if (before is not null && before != "0" && !FluxerOptions.IsId(before))
-            throw new McpException("Invalid pagination.");
     }
 
     private static void ValidateQuery(string query)
@@ -304,5 +282,4 @@ public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient adm
     }
 
     private static McpException Denied() => new("Channel access could not be verified.");
-    private static McpException Unavailable() => new("Fluxer data could not be verified. Try again later.");
 }

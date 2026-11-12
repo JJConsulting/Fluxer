@@ -39,7 +39,8 @@ internal static class ServiceCollectionExtensions
         services.AddMcpServer()
             .WithHttpTransport(options => options.Stateless = true)
             .WithTools<IdentityTools>()
-            .WithTools<DmTools>();
+            .WithTools<DmTools>()
+            .WithTools<GuildTools>();
 
         return services;
     }

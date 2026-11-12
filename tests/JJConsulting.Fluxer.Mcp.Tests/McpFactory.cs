@@ -70,6 +70,11 @@ public sealed class FakeFluxer : HttpMessageHandler
     public bool? Nsfw = false;
     public string[]? Recipients;
     public bool FailMessages;
+    public string GuildOwner = "456";
+    public bool GuildNsfw;
+    public bool GuildChannelNsfw;
+    public int GuildChannelType;
+    public bool FailGuilds;
     public bool LaterPage;
     public bool TwoChannels;
     public bool MoreMessages;
@@ -147,6 +152,17 @@ public sealed class FakeFluxer : HttpMessageHandler
         }
         Assert.StartsWith("/api/v1/admin/", path);
         Assert.True(request.Headers.Authorization is { Scheme: "Admin", Parameter: "fixture-admin" });
+        if (path.EndsWith("/guilds"))
+        {
+            Assert.Equal("456", path.Split('/')[5]);
+            if (FailGuilds) return new(HttpStatusCode.Forbidden);
+            var query = QueryHelpers.ParseQuery(request.RequestUri.Query);
+            return Json(new { guilds = query.ContainsKey("after") ? Array.Empty<object>() :
+                new object[] { new { id = "3000", name = "Fixture guild" } } });
+        }
+        if (path == "/api/v1/admin/guilds/3000")
+            return Json(new { guild = new { id = "3000", owner_id = GuildOwner, nsfw = GuildNsfw,
+                channels = new[] { new { id = "4000", name = "general", type = GuildChannelType, nsfw = GuildChannelNsfw } } } });
         if (path.EndsWith("/dm-channels"))
         {
             var user = path.Split('/')[5];

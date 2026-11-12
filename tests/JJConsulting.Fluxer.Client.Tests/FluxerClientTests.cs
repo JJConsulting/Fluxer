@@ -78,6 +78,52 @@ public class FluxerClientTests
     }
 
     [Fact]
+    public async Task Guild_Queries_Use_Admin_Transport_And_Return_Typed_Data()
+    {
+        using var handler = new ScriptedHandler(
+            (_, _) => Task.FromResult(Json("""{"guilds":[{"id":"3000","name":"Example"}]}""")),
+            (_, _) => Task.FromResult(Json("""{"guild":{"id":"3000","owner_id":"456","nsfw":false,"channels":[{"id":"4000","name":"general","type":0,"nsfw":false}]}}""")));
+        using var http = new HttpClient(handler);
+        var client = Admin(http);
+        var page = Success(await client.GetUserGuildPageAsync(UserId, new FluxerPageRequest(2, after: "2000")));
+        Assert.Equal("Example", Assert.Single(page.Guilds).Name);
+        var guild = Success(await client.GetGuildAsync("3000"));
+        Assert.Equal("456", guild.OwnerId);
+        Assert.False(guild.Nsfw);
+        Assert.Equal("4000", Assert.Single(guild.Channels).Id);
+        Assert.EndsWith($"/v1/admin/users/{UserId}/guilds?limit=2&after=2000", handler.Requests[0].Url);
+        Assert.EndsWith("/v1/admin/guilds/3000", handler.Requests[1].Url);
+        Assert.All(handler.Requests, r => Assert.Equal($"Admin {AdminKey}", r.Authorization));
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"guilds\":null}")]
+    [InlineData("{\"guilds\":[{\"id\":\"../3000\",\"name\":\"Example\"}]}")]
+    [InlineData("{\"guilds\":[{\"id\":\"2000\",\"name\":\"Example\"}]}")]
+    [InlineData("{\"guilds\":[{\"id\":\"3000\",\"name\":\"Example\"},{\"id\":\"3000\",\"name\":\"Duplicate\"}]}")]
+    public async Task Guild_Pages_Reject_Unverifiable_Responses(string body)
+    {
+        using var handler = new ScriptedHandler((_, _) => Task.FromResult(Json(body)));
+        using var http = new HttpClient(handler);
+        var result = await Admin(http).GetUserGuildPageAsync(UserId, new FluxerPageRequest(2, after: "2000"));
+        Assert.True(result is FluxerError { Failure: FluxerFailure.InvalidResponse });
+    }
+
+    [Theory]
+    [InlineData("{\"guild\":null}")]
+    [InlineData("{\"guild\":{\"id\":\"9999\",\"owner_id\":\"456\",\"channels\":[]}}")]
+    [InlineData("{\"guild\":{\"id\":\"3000\",\"owner_id\":\"invalid\",\"channels\":[]}}")]
+    [InlineData("{\"guild\":{\"id\":\"3000\",\"owner_id\":\"456\",\"channels\":null}}")]
+    public async Task Guild_Lookup_Rejects_Unverifiable_Responses(string body)
+    {
+        using var handler = new ScriptedHandler((_, _) => Task.FromResult(Json(body)));
+        using var http = new HttpClient(handler);
+        var result = await Admin(http).GetGuildAsync("3000");
+        Assert.True(result is FluxerError { Failure: FluxerFailure.InvalidResponse });
+    }
+
+    [Fact]
     public async Task Complete_Dm_Listing_Follows_Numeric_Cursor_Until_Empty_Even_After_A_Short_Page()
     {
         // Numeric min is 9, not the lexicographic min 100.

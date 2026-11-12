@@ -18,6 +18,44 @@ public sealed class FluxerAdminClient
         _transport = new FluxerHttpTransport(client, _options);
     }
 
+    public async Task<FluxerResult<FluxerGuildPage>> GetUserGuildPageAsync(string userId,
+        FluxerPageRequest? page = null, CancellationToken cancellationToken = default)
+    {
+        ValidateId(userId);
+        page ??= new FluxerPageRequest();
+        var query = PageQuery(page, 200);
+        var response = await _transport.GetAsync<FluxerGuildPage>(
+            $"v1/admin/users/{userId}/guilds?{query}", "Admin", _options.AdminApiKey, cancellationToken);
+        if (response is FluxerError error) return error;
+        if (response is not FluxerGuildPage result || result.Guilds is null || result.Guilds.Count > page.Limit)
+            return InvalidResponse();
+        if (result.Guilds.Any(g => g is null || !IsId(g.Id) || g.Name is null) ||
+            !HasValidPageIds(result.Guilds.Select(g => g.Id), page))
+            return InvalidResponse();
+        return result;
+    }
+
+    public async Task<FluxerResult<FluxerGuild>> GetGuildAsync(string guildId,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateId(guildId);
+        var response = await _transport.GetAsync<GuildResponse>(
+            $"v1/admin/guilds/{guildId}", "Admin", _options.AdminApiKey, cancellationToken);
+        if (response is FluxerError error) return error;
+        if (response is not GuildResponse { Guild: { } guild } || guild.Id != guildId ||
+            !IsId(guild.OwnerId) || guild.Channels is null)
+            return InvalidResponse();
+        if (guild.Channels.Any(c => c is null || !IsId(c.Id) || c.Name is null) ||
+            guild.Channels.Select(c => c.Id).Distinct(StringComparer.Ordinal).Count() != guild.Channels.Count)
+            return InvalidResponse();
+        return guild;
+    }
+
+    private sealed class GuildResponse
+    {
+        public required FluxerGuild? Guild { get; init; }
+    }
+
     public async Task<FluxerResult<FluxerDmPage>> GetIndividualDmPageAsync(string userId,
         FluxerPageRequest? page = null,
         CancellationToken cancellationToken = default)

@@ -272,3 +272,7 @@ Connection failing? Check that public `/health` and `/.well-known/oauth-authoriz
 - Activity returns up to 100 messages per channel. Continue with `NextChannelBefore` for more channels; use `get_my_dm_messages` with the same dates and each conversation's `NextBefore` while `HasMore` is true.
 - Search returns at most 100 matches (`Truncated` indicates more). Empty results may mean the instance has no search index.
 - Run one MCP process: pending OAuth logins are stored in memory and lost on restart.
+
+## Disclaimer
+
+[Fluxer](https://fluxer.com/) is an independent project and is not developed or owned by JJ Consulting. This repository provides third-party integrations and is not affiliated with or endorsed by Fluxer.

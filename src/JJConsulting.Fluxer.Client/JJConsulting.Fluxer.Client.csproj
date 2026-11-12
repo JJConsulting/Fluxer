@@ -4,12 +4,14 @@
     <Authors>JJConsulting</Authors>
     <RepositoryUrl>https://github.com/JJConsulting/JJConsulting.Fluxer</RepositoryUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <TargetFramework>net11.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
     <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <None Include="../../LICENSE" Pack="true" PackagePath="/" />
     <PackageReference Include="Microsoft.Extensions.Http" />
   </ItemGroup>
 </Project>

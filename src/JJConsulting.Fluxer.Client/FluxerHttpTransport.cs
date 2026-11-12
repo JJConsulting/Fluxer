@@ -94,9 +94,13 @@ internal sealed class FluxerHttpTransport
                     FluxerError error = status == HttpStatusCode.TooManyRequests
                         ? new FluxerRateLimitedError(retryAfter)
                         : new FluxerHttpError(failure, status, retryAfter);
-                    if (attempt >= _options.MaxRetries ||
-                        !(IsTransient(status) || status == HttpStatusCode.TooManyRequests) ||
-                        (status == HttpStatusCode.TooManyRequests && retryAfter is null))
+                    if (attempt >= _options.MaxRetries)
+                        return error;
+
+                    if (!(IsTransient(status) || status == HttpStatusCode.TooManyRequests))
+                        return error;
+
+                    if (status == HttpStatusCode.TooManyRequests && retryAfter is null)
                         return error;
 
                     delay = retryAfter ?? Backoff(attempt);
@@ -171,15 +175,21 @@ internal sealed class FluxerHttpTransport
         try
         {
             using var json = JsonDocument.Parse(body);
-            if (json.RootElement.ValueKind == JsonValueKind.Object &&
-                json.RootElement.TryGetProperty("retry_after", out var value) &&
-                value.ValueKind == JsonValueKind.Number && value.TryGetDouble(out var seconds) &&
-                double.IsFinite(seconds) && seconds >= 0)
-            {
-                var fromBody = TimeSpan.FromSeconds(Math.Min(seconds, TimeSpan.MaxValue.TotalSeconds / 2));
-                if (delay is null || fromBody > delay)
-                    delay = fromBody;
-            }
+            if (json.RootElement.ValueKind != JsonValueKind.Object)
+                return delay;
+
+            if (!json.RootElement.TryGetProperty("retry_after", out var value))
+                return delay;
+
+            if (value.ValueKind != JsonValueKind.Number || !value.TryGetDouble(out var seconds))
+                return delay;
+
+            if (!double.IsFinite(seconds) || seconds < 0)
+                return delay;
+
+            var fromBody = TimeSpan.FromSeconds(Math.Min(seconds, TimeSpan.MaxValue.TotalSeconds / 2));
+            if (delay is null || fromBody > delay)
+                delay = fromBody;
         }
         catch (JsonException)
         {

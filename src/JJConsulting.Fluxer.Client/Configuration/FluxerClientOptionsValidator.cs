@@ -7,10 +7,8 @@ internal sealed class FluxerClientOptionsValidator : IValidateOptions<FluxerClie
     public ValidateOptionsResult Validate(string? name, FluxerClientOptions options)
     {
         var errors = new List<string>();
-
-        if (!Uri.TryCreate(options.ApiBaseUrl, UriKind.Absolute, out var uri) ||
-            uri.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(uri.UserInfo) ||
-            !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment) || string.IsNullOrEmpty(uri.Host))
+        
+        if (!Uri.TryCreate(options.ApiBaseUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment) || string.IsNullOrEmpty(uri.Host))
             errors.Add("Fluxer:ApiBaseUrl must be an absolute HTTPS URL without credentials, query, or fragment.");
 
         if (!FluxerClientOptions.IsCredential(options.AdminApiKey))

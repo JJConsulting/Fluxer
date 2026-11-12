@@ -8,19 +8,32 @@ internal sealed class FluxerOptionsValidator : IValidateOptions<FluxerOptions>
     {
         var errors = new List<string>();
 
-        if (!string.IsNullOrEmpty(options.PublicUrl) &&
-            (!Uri.TryCreate(options.PublicUrl, UriKind.Absolute, out var origin) || origin.Scheme != "https" ||
-             origin.Host.Length == 0 || origin.UserInfo != "" || origin.GetLeftPart(UriPartial.Authority) != options.PublicUrl))
-            errors.Add("Fluxer:PublicUrl must be an HTTPS origin without credentials, path, query, fragment, or trailing slash.");
+        const string publicUrlError = "Fluxer:PublicUrl must be an HTTPS origin without credentials, path, query, fragment, or trailing slash.";
+        if (!string.IsNullOrEmpty(options.PublicUrl))
+        {
+            if (!Uri.TryCreate(options.PublicUrl, UriKind.Absolute, out var origin))
+                errors.Add(publicUrlError);
+            else if (origin.Scheme != "https" || origin.Host.Length == 0 || origin.UserInfo != "")
+                errors.Add(publicUrlError);
+            else if (origin.GetLeftPart(UriPartial.Authority) != options.PublicUrl)
+                errors.Add(publicUrlError);
+        }
 
-        if (!Uri.TryCreate(options.ApiBaseUrl, UriKind.Absolute, out var api) || api.Scheme != "https" ||
-            api.Host.Length == 0 || api.UserInfo != "" || api.Query != "" || api.Fragment != "" || options.ApiBaseUrl.EndsWith('/'))
-            errors.Add("Fluxer:ApiBaseUrl must be an absolute HTTPS URL without credentials, query, fragment, or trailing slash.");
+        const string apiBaseUrlError = "Fluxer:ApiBaseUrl must be an absolute HTTPS URL without credentials, query, fragment, or trailing slash.";
+        if (!Uri.TryCreate(options.ApiBaseUrl, UriKind.Absolute, out var api))
+            errors.Add(apiBaseUrlError);
+        else if (api.Scheme != "https" || api.Host.Length == 0 || api.UserInfo != "")
+            errors.Add(apiBaseUrlError);
+        else if (api.Query != "" || api.Fragment != "" || options.ApiBaseUrl.EndsWith('/'))
+            errors.Add(apiBaseUrlError);
 
-        if (!Uri.TryCreate(options.ClientRedirectUri, UriKind.Absolute, out var redirect) || redirect.Scheme != "https" ||
-            redirect.Host.Length == 0 || redirect.UserInfo != "" || redirect.Fragment != "" ||
-            options.ClientRedirectUri.Length > 2048)
-            errors.Add("Fluxer:ClientRedirectUri must be an absolute HTTPS URL without credentials or fragment, with at most 2048 characters.");
+        const string redirectUriError = "Fluxer:ClientRedirectUri must be an absolute HTTPS URL without credentials or fragment, with at most 2048 characters.";
+        if (!Uri.TryCreate(options.ClientRedirectUri, UriKind.Absolute, out var redirect))
+            errors.Add(redirectUriError);
+        else if (redirect.Scheme != "https" || redirect.Host.Length == 0 || redirect.UserInfo != "")
+            errors.Add(redirectUriError);
+        else if (redirect.Fragment != "" || options.ClientRedirectUri.Length > 2048)
+            errors.Add(redirectUriError);
 
         if (!FluxerOptions.IsId(options.ClientId))
             errors.Add("Fluxer:ClientId must be a positive Int64 identifier without leading zeros.");

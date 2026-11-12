@@ -245,8 +245,10 @@ public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient adm
     {
         var user = accessor.HttpContext?.User;
         var id = user?.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (user?.Identity?.IsAuthenticated != true || !user.HasClaim("scope", FluxerOptions.Scope) ||
-            !FluxerOptions.IsId(id))
+        if (user?.Identity?.IsAuthenticated != true)
+            throw new McpException("Authentication with identify scope is required.");
+
+        if (!user.HasClaim("scope", FluxerOptions.Scope) || !FluxerOptions.IsId(id))
             throw new McpException("Authentication with identify scope is required.");
         return id!;
     }
@@ -257,7 +259,10 @@ public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient adm
 
     private static void ValidatePage(int limit, int maximum, string? before)
     {
-        if (limit < 1 || limit > maximum || before is not null && before != "0" && !FluxerOptions.IsId(before))
+        if (limit < 1 || limit > maximum)
+            throw new McpException("Invalid pagination.");
+
+        if (before is not null && before != "0" && !FluxerOptions.IsId(before))
             throw new McpException("Invalid pagination.");
     }
 
@@ -271,8 +276,10 @@ public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient adm
     {
         if (start is null && end is null) 
             return;
-        if (start is null || end is null || start >= end ||
-            start < DateTimeOffset.FromUnixTimeMilliseconds(1420070400000L))
+        if (start is null || end is null)
+            throw new McpException("Supply start before end, both with UTC offsets, from 2015 onward.");
+
+        if (start >= end || start < DateTimeOffset.FromUnixTimeMilliseconds(1420070400000L))
             throw new McpException("Supply start before end, both with UTC offsets, from 2015 onward.");
         TimeCursor(end.Value);
     }

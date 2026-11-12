@@ -33,10 +33,16 @@ public sealed class OAuthBridge(IOptions<FluxerOptions> settings, IHttpClientFac
             return Error("invalid_request");
         var state = query["state"].ToString();
         var challenge = query["code_challenge"].ToString();
-        if (state.Length is < 1 or > 256 || query["response_type"] != "code" ||
-            query["code_challenge_method"] != "S256" || challenge.Length != 43 ||
-            !challenge.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_') ||
-            query["resource"] != options.GetPublicUrl(context.Request) + "/mcp")
+        if (state.Length is < 1 or > 256 || query["response_type"] != "code")
+            return Error("invalid_request");
+
+        if (query["code_challenge_method"] != "S256" || challenge.Length != 43)
+            return Error("invalid_request");
+
+        if (!challenge.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_'))
+            return Error("invalid_request");
+
+        if (query["resource"] != options.GetPublicUrl(context.Request) + "/mcp")
             return Error("invalid_request");
         if (query["scope"] != FluxerOptions.Scope) return Error("invalid_scope");
 
@@ -60,11 +66,19 @@ public sealed class OAuthBridge(IOptions<FluxerOptions> settings, IHttpClientFac
     {
         var query = context.Request.Query;
         var state = query["state"].ToString();
-        if (query.Any(p => p.Value.Count != 1) || state.Length != 43 ||
-            !cache.TryGetValue<Login>("login:" + state, out var login) || login is null ||
-            login.Callback != options.GetPublicUrl(context.Request) + CallbackPath ||
-            context.Request.Cookies["__Host-FluxerMcp-" + state] != login.Correlation ||
-            Interlocked.Exchange(ref login.Used, 1) != 0)
+        if (query.Any(p => p.Value.Count != 1) || state.Length != 43)
+            return Error("invalid_request");
+
+        if (!cache.TryGetValue<Login>("login:" + state, out var login) || login is null)
+            return Error("invalid_request");
+
+        if (login.Callback != options.GetPublicUrl(context.Request) + CallbackPath)
+            return Error("invalid_request");
+
+        if (context.Request.Cookies["__Host-FluxerMcp-" + state] != login.Correlation)
+            return Error("invalid_request");
+
+        if (Interlocked.Exchange(ref login.Used, 1) != 0)
             return Error("invalid_request");
         cache.Remove("login:" + state);
         context.Response.Cookies.Delete("__Host-FluxerMcp-" + state, CorrelationCookie());
@@ -96,14 +110,25 @@ public sealed class OAuthBridge(IOptions<FluxerOptions> settings, IHttpClientFac
         {
             var code = form["code"].ToString();
             var verifier = form["code_verifier"].ToString();
-            if (code.Length != 43 || verifier.Length is < 43 or > 128 ||
-                !verifier.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '.' or '_' or '~') ||
-                !cache.TryGetValue<Code>("code:" + code, out var pending) || pending is null ||
-                form["redirect_uri"] != options.ClientRedirectUri ||
-                pending.Login.Callback != options.GetPublicUrl(context.Request) + CallbackPath ||
-                WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(verifier))) !=
-                pending.Login.Challenge ||
-                Interlocked.Exchange(ref pending.Used, 1) != 0)
+            if (code.Length != 43 || verifier.Length is < 43 or > 128)
+                return Error("invalid_grant");
+
+            if (!verifier.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '.' or '_' or '~'))
+                return Error("invalid_grant");
+
+            if (!cache.TryGetValue<Code>("code:" + code, out var pending) || pending is null)
+                return Error("invalid_grant");
+
+            if (form["redirect_uri"] != options.ClientRedirectUri)
+                return Error("invalid_grant");
+
+            if (pending.Login.Callback != options.GetPublicUrl(context.Request) + CallbackPath)
+                return Error("invalid_grant");
+
+            if (WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(verifier))) != pending.Login.Challenge)
+                return Error("invalid_grant");
+
+            if (Interlocked.Exchange(ref pending.Used, 1) != 0)
                 return Error("invalid_grant");
             cache.Remove("code:" + code);
             fields["code"] = pending.UpstreamCode;
@@ -138,17 +163,23 @@ public sealed class OAuthBridge(IOptions<FluxerOptions> settings, IHttpClientFac
     private async Task<OAuthFormResult> ReadFormAsync(HttpContext context)
     {
         var request = context.Request;
-        if (request.Headers.ContainsKey("Authorization") || request.ContentLength > 16384 ||
-            !string.Equals(request.ContentType?.Split(';')[0].Trim(), "application/x-www-form-urlencoded",
+        if (request.Headers.ContainsKey("Authorization") || request.ContentLength > 16384)
+            return new OAuthError("invalid_request");
+
+        if (!string.Equals(request.ContentType?.Split(';')[0].Trim(), "application/x-www-form-urlencoded",
                 StringComparison.OrdinalIgnoreCase))
             return new OAuthError("invalid_request");
         try
         {
             request.EnableBuffering(bufferThreshold: 16384, bufferLimit: 16384);
             var form = await request.ReadFormAsync(context.RequestAborted);
-            if (form.Count > 16 || form.Any(p => p.Value.Count != 1 || p.Value.ToString().Length > 4096) ||
-                form["client_id"] != options.ClientId || form.ContainsKey("client_secret") ||
-                form.ContainsKey("resource") && form["resource"] != options.GetPublicUrl(request) + "/mcp")
+            if (form.Count > 16 || form.Any(p => p.Value.Count != 1 || p.Value.ToString().Length > 4096))
+                return new OAuthError("invalid_request");
+
+            if (form["client_id"] != options.ClientId || form.ContainsKey("client_secret"))
+                return new OAuthError("invalid_request");
+
+            if (form.ContainsKey("resource") && form["resource"] != options.GetPublicUrl(request) + "/mcp")
                 return new OAuthError("invalid_request");
             return form;
         }
@@ -184,10 +215,18 @@ public sealed class OAuthBridge(IOptions<FluxerOptions> settings, IHttpClientFac
             }
 
             var token = JsonSerializer.Deserialize<TokenResponse>(body);
-            if (token is null || !Credential(token.AccessToken) || !Credential(token.RefreshToken) ||
-                token.ExpiresIn <= 0 || token.TokenType != "Bearer" ||
-                token.Scope?.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains(FluxerOptions.Scope) != true)
+            if (token is null)
                 return new OAuthError("server_error", 502);
+
+            if (!Credential(token.AccessToken) || !Credential(token.RefreshToken))
+                return new OAuthError("server_error", 502);
+
+            if (token.ExpiresIn <= 0 || token.TokenType != "Bearer")
+                return new OAuthError("server_error", 502);
+
+            if (token.Scope?.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains(FluxerOptions.Scope) != true)
+                return new OAuthError("server_error", 502);
+            
             return token;
         }
         catch (Exception error) when (error is HttpRequestException or OperationCanceledException or JsonException)

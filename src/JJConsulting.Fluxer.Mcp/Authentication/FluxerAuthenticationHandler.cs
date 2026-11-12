@@ -22,12 +22,14 @@ public sealed class FluxerAuthenticationHandler(
         if (!Request.Headers.ContainsKey("Authorization")) 
             return AuthenticateResult.NoResult();
         
-        if (!AuthenticationHeaderValue.TryParse(Request.Headers.Authorization, out var header) ||
-            !string.Equals(header.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase) ||
-            string.IsNullOrEmpty(header.Parameter) || !header.Parameter.All(c => c is >= '!' and <= '~'))
-        {
+        if (!AuthenticationHeaderValue.TryParse(Request.Headers.Authorization, out var header))
             return AuthenticateResult.Fail("Invalid bearer token.");
-        }
+
+        if (!string.Equals(header.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase))
+            return AuthenticateResult.Fail("Invalid bearer token.");
+
+        if (string.IsNullOrEmpty(header.Parameter) || !header.Parameter.All(c => c is >= '!' and <= '~'))
+            return AuthenticateResult.Fail("Invalid bearer token.");
 
         try
         {
@@ -43,10 +45,19 @@ public sealed class FluxerAuthenticationHandler(
                 return AuthenticateResult.Fail("Fluxer authentication unavailable.");
             var token = JsonSerializer.Deserialize<FluxerTokenResponse>(await response.Content.ReadAsStringAsync(Context.RequestAborted));
             // Use an OAuth application dedicated to this MCP: its client_id binds tokens to this service.
-            if (token is null || !token.Active || token.ClientId != fluxer.ClientId ||
-                token.TokenType != "Bearer" || !FluxerOptions.IsId(token.Subject) ||
-                token.ExpiresAt <= DateTimeOffset.UtcNow.ToUnixTimeSeconds() ||
-                token.Scope?.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains(FluxerOptions.Scope) != true)
+            if (token is null || !token.Active)
+                return AuthenticateResult.Fail("Invalid Fluxer access token.");
+
+            if (token.ClientId != fluxer.ClientId || token.TokenType != "Bearer")
+                return AuthenticateResult.Fail("Invalid Fluxer access token.");
+
+            if (!FluxerOptions.IsId(token.Subject))
+                return AuthenticateResult.Fail("Invalid Fluxer access token.");
+
+            if (token.ExpiresAt <= DateTimeOffset.UtcNow.ToUnixTimeSeconds())
+                return AuthenticateResult.Fail("Invalid Fluxer access token.");
+
+            if (token.Scope?.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains(FluxerOptions.Scope) != true)
                 return AuthenticateResult.Fail("Invalid Fluxer access token.");
             var identity = new ClaimsIdentity([
                 new Claim(ClaimTypes.NameIdentifier, token.Subject!), new Claim("scope", FluxerOptions.Scope)

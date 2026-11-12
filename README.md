@@ -1,6 +1,13 @@
 # JJConsulting.Fluxer
 
-.NET client and MCP server for Fluxer. The MCP reads the signed-in user's non-NSFW individual DMs through the Admin API.
+This repository provides **two integrations with Fluxer**:
+
+| Integration | Project | Use case |
+| --- | --- | --- |
+| **REST API Client** | `JJConsulting.Fluxer.Client` | Call Fluxer's identity and Admin REST APIs directly from your .NET application. Can be used independently of the MCP server. |
+| **MCP Server** | `JJConsulting.Fluxer.Mcp` | Connect AI assistants such as ChatGPT to Fluxer through MCP tools. Uses the REST client internally to read the signed-in user's non-NSFW individual DMs. |
+
+Use the REST client to integrate Fluxer into your application, or run the MCP server to expose Fluxer tools to an AI assistant. Setup instructions for each integration follow below.
 
 ## REST API Client
 Typed .NET client for Fluxer's identity and Admin APIs, with dependency injection support.
@@ -87,7 +94,7 @@ ngrok http https://localhost:7042
 
 Use the tunnel hostname in `AllowedHosts` and its HTTPS origin in `PublicUrl`. Restart the server after configuration changes. Keep both processes running.
 
-## Connect ChatGPT
+### Connect ChatGPT
 
 1. In the Fluxer OAuth application, register `https://YOUR_PUBLIC_HOST/auth/fluxer/callback`.
 2. Create a custom MCP app in ChatGPT (enable developer mode if required):
@@ -110,7 +117,7 @@ If the tunnel hostname changes, update `AllowedHosts`, `PublicUrl`, the Fluxer c
 
 Connection failing? Check that public `/health` and `/.well-known/oauth-authorization-server` return HTTP `200`, and that the metadata's `issuer` matches `PublicUrl`.
 
-## Tools
+### MCP Tools
 
 | Tool | Purpose |
 | --- | --- |

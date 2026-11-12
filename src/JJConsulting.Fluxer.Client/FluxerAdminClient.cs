@@ -1,6 +1,7 @@
 using System.Globalization;
 using JJConsulting.Fluxer.Client.Models;
 using Microsoft.Extensions.Options;
+
 // ReSharper disable ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
 
 namespace JJConsulting.Fluxer.Client;
@@ -48,7 +49,8 @@ public sealed class FluxerAdminClient
             if (channel.Recipients is null || channel.Recipients.Count > 100)
                 return InvalidResponse();
 
-            if (channel.Recipients.Select(r => r?.Id).Distinct(StringComparer.Ordinal).Count() != channel.Recipients.Count)
+            if (channel.Recipients.Select(r => r?.Id).Distinct(StringComparer.Ordinal).Count() !=
+                channel.Recipients.Count)
                 return InvalidResponse();
 
             foreach (var recipient in channel.Recipients)
@@ -78,7 +80,7 @@ public sealed class FluxerAdminClient
         for (var index = 0; index < _options.MaxDmPages; index++)
         {
             var response = await GetIndividualDmPageAsync(userId,
-                new FluxerPageRequest(_options.DmPageSize, Before: before), cancellationToken);
+                new FluxerPageRequest(_options.DmPageSize, before: before), cancellationToken);
             if (response is FluxerError error)
                 return error;
             if (response is not FluxerDmPage page)
@@ -160,7 +162,8 @@ public sealed class FluxerAdminClient
                 return InvalidResponse();
         }
 
-        if (result.Messages.Select(message => message.Id).Distinct(StringComparer.Ordinal).Count() != result.Messages.Count)
+        if (result.Messages.Select(message => message.Id).Distinct(StringComparer.Ordinal).Count() !=
+            result.Messages.Count)
             return InvalidResponse();
 
         return result;

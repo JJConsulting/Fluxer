@@ -23,7 +23,7 @@ public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient adm
         var userId = UserId();
         ValidatePage(limit, 200, before);
         var result =
-            await admin.GetIndividualDmPageAsync(userId, new FluxerPageRequest(limit, Before: before),
+            await admin.GetIndividualDmPageAsync(userId, new FluxerPageRequest(limit, before: before),
                 cancellationToken);
         if (result is not FluxerDmPage page) throw Unavailable();
         if (page.Channels.Any(channel => !IsAuthorized(channel, userId)))
@@ -111,7 +111,7 @@ public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient adm
         ValidateRange(start, end);
         ValidatePage(limit, 20, before);
         var result =
-            await admin.GetIndividualDmPageAsync(userId, new FluxerPageRequest(limit, Before: before),
+            await admin.GetIndividualDmPageAsync(userId, new FluxerPageRequest(limit, before: before),
                 cancellationToken);
         if (result is not FluxerDmPage page) throw Unavailable();
         if (page.Channels.Any(c => !IsAuthorized(c, userId))) throw Denied();
@@ -174,7 +174,7 @@ public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient adm
             if (before is null || long.Parse(boundary) < long.Parse(before)) before = boundary;
         }
 
-        var result = await admin.GetMessagesAsync(channel.ChannelId, new FluxerPageRequest(limit, Before: before), ct);
+        var result = await admin.GetMessagesAsync(channel.ChannelId, new FluxerPageRequest(limit, before: before), ct);
         if (result is not FluxerMessagePage page) throw Unavailable();
         var messages = page.Messages
             .Where(m => (start is null || m.Timestamp >= start) && (end is null || m.Timestamp < end))

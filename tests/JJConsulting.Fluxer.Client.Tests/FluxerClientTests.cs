@@ -106,7 +106,7 @@ public class FluxerClientTests
         Assert.Equal("9007199254740993", first.Messages[0].Id);
         Assert.Equal("sentinel-message-content", first.Messages[0].Content);
         Assert.Equal(TimeSpan.Zero, first.Messages[0].Timestamp.Offset);
-        var last = Success(await client.GetMessagesAsync(ChannelId, new FluxerPageRequest(2, Before: first.Messages[0].Id)));
+        var last = Success(await client.GetMessagesAsync(ChannelId, new FluxerPageRequest(2, before: first.Messages[0].Id)));
         Assert.Empty(last.Messages);
         Assert.False(last.HasMore);
         Assert.EndsWith("&before=9007199254740993", handler.Requests[1].Url);
@@ -118,7 +118,7 @@ public class FluxerClientTests
         using var handler = new ScriptedHandler((_, _) => Task.FromResult(Json(Messages(false, "12", "11"))),
             (_, _) => Task.FromResult(Json(Messages(false))));
         using var http = new HttpClient(handler);
-        var first = Success(await Admin(http).GetMessagesAsync(ChannelId, new FluxerPageRequest(50, After: "10")));
+        var first = Success(await Admin(http).GetMessagesAsync(ChannelId, new FluxerPageRequest(50, after: "10")));
         Assert.Equal(new[] { "12", "11" }, first.Messages.Select(m => m.Id));
         Assert.EndsWith("limit=50&after=10", handler.Requests[0].Url);
         var missing = Success(await Admin(http).GetMessagesAsync("123"));
@@ -494,7 +494,7 @@ public class FluxerClientTests
     {
         using var handler = new ScriptedHandler((_, _) => Task.FromResult(Json(Messages(false, "11"))));
         using var http = new HttpClient(handler);
-        Assert.Single(Success(await Admin(http).GetMessagesAsync(ChannelId, new FluxerPageRequest(After: "0"))).Messages);
+        Assert.Single(Success(await Admin(http).GetMessagesAsync(ChannelId, new FluxerPageRequest(after: "0"))).Messages);
         Assert.EndsWith("&after=0", handler.Requests[0].Url);
     }
 

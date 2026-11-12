@@ -66,6 +66,8 @@ if (dmResult is FluxerDmPage page)
 
 ## MCP Server
 
+Release tags (`v*`) publish the Docker image to `ghcr.io/jjconsulting/fluxer-mcp:<version>` (without the `v` prefix).
+
 Requires a dedicated Fluxer OAuth application and an Admin API key. The key and its owner need `user:list:dm_channels` and `message:lookup`; the owner also needs `admin:authenticate`.
 
 ### Install on your server with Docker Compose
@@ -84,29 +86,45 @@ Prerequisites: Git, Docker Engine with the Compose plugin (`docker compose`), an
 2. Edit `.env` with your instance and credentials:
 
    ```dotenv
-   ALLOWED_HOSTS=localhost;127.0.0.1;[::1];mcp.example.com
-   FLUXER_API_BASE_URL=https://your-fluxer-instance.com/api
-   FLUXER_CLIENT_ID=YOUR_CLIENT_ID
-   FLUXER_CLIENT_SECRET=YOUR_CLIENT_SECRET
-   FLUXER_ADMIN_API_KEY=YOUR_ADMIN_API_KEY
-   FLUXER_PUBLIC_URL=https://mcp.example.com
-   FLUXER_CLIENT_REDIRECT_URI=https://chatgpt.com/connector_platform_oauth_redirect
+   ASPNETCORE_ENVIRONMENT=Production
+   AllowedHosts=localhost;127.0.0.1;[::1];mcp.example.com
+   Fluxer__ApiBaseUrl=https://your-fluxer-instance.com/api
+   Fluxer__ClientId=YOUR_CLIENT_ID
+   Fluxer__ClientSecret=YOUR_CLIENT_SECRET
+   Fluxer__AdminApiKey=YOUR_ADMIN_API_KEY
+   Fluxer__PublicUrl=https://mcp.example.com
+   Fluxer__ClientRedirectUri=https://chatgpt.com/connector_platform_oauth_redirect
    ```
 
-   Replace `mcp.example.com` with your public hostname. `FLUXER_API_BASE_URL` must use HTTPS and omit `/v1` and the trailing slash. `FLUXER_PUBLIC_URL` must be the public HTTPS origin, without a path or trailing slash. Use the exact ChatGPT callback for `FLUXER_CLIENT_REDIRECT_URI` (see **Connect ChatGPT** below). Keep `.env` private and out of Git.
+   Replace `mcp.example.com` with your public hostname. `Fluxer__ApiBaseUrl` must use HTTPS and omit `/v1` and the trailing slash. `Fluxer__PublicUrl` must be the public HTTPS origin, without a path or trailing slash. Use the exact ChatGPT callback for `Fluxer__ClientRedirectUri` (see **Connect ChatGPT** below). Keep `.env` private and out of Git.
 
 3. In your Fluxer OAuth application, register `https://mcp.example.com/auth/fluxer/callback` as a redirect URI.
 
-4. Build and start the MCP server:
+4. To use the published image, replace the contents of `compose.yaml` with the example below. Replace `<version>` with a published release version, without the `v` prefix:
+
+   ```yaml
+   services:
+     fluxer-mcp:
+       image: ghcr.io/jjconsulting/fluxer-mcp:<version>
+       restart: unless-stopped
+       ports:
+         - "127.0.0.1:8080:8080"
+       env_file: .env
+   ```
+
+   Start the MCP server:
 
    ```bash
-   docker compose up -d --build
+   docker compose pull
+   docker compose up -d
    docker compose ps
    docker compose logs --tail=100 fluxer-mcp
    curl --fail http://127.0.0.1:8080/health
    ```
 
-   The supplied `compose.yaml` publishes HTTP port `8080` only on the host's loopback interface and restarts the container unless explicitly stopped. Run one instance because pending OAuth logins are stored in memory.
+   To build from source instead, keep the repository's original `compose.yaml` and run `docker compose up -d --build` instead of the pull and start commands above.
+
+   Both configurations publish HTTP port `8080` only on the host's loopback interface and restart the container unless explicitly stopped. Run one instance because pending OAuth logins are stored in memory.
 
 5. Configure **Nginx or Caddy** below, then verify the public endpoints.
 
@@ -159,9 +177,9 @@ Prerequisites: Git, Docker Engine with the Compose plugin (`docker compose`), an
    curl --fail https://mcp.example.com/.well-known/oauth-authorization-server
    ```
 
-   Both endpoints should return HTTP `200`, and the OAuth metadata's `issuer` should equal `FLUXER_PUBLIC_URL`.
+   Both endpoints should return HTTP `200`, and the OAuth metadata's `issuer` should equal `Fluxer__PublicUrl`.
 
-After editing `.env`, run `docker compose up -d` to apply changes. To update the application, run `git pull` followed by `docker compose up -d --build`. To stop it, run `docker compose down`. Restarts discard pending OAuth logins; retry any sign-in that was in progress.
+After editing `.env`, run `docker compose up -d` to apply changes. To update the published image, change its version in `compose.yaml`, then run `docker compose pull` followed by `docker compose up -d`. For source builds, run `git pull` followed by `docker compose up -d --build`. To stop it, run `docker compose down`. Restarts discard pending OAuth logins; retry any sign-in that was in progress.
 
 ### Run locally with .NET
 

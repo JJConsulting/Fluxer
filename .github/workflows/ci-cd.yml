@@ -80,7 +80,7 @@ jobs:
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ghcr.io/${{ github.repository_owner }}/fluxer-mcp
           tags: |
             type=semver,pattern={{version}}
           flavor: latest=false

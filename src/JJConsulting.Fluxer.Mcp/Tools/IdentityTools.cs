@@ -1,9 +1,10 @@
 using System.ComponentModel;
 using System.Security.Claims;
 using System.Text.Json.Serialization;
+using JJConsulting.Fluxer.Mcp.Authentication;
 using ModelContextProtocol.Server;
 
-namespace JJConsulting.Fluxer.Mcp.Authentication;
+namespace JJConsulting.Fluxer.Mcp.Tools;
 
 public sealed record FluxerProfile([property: JsonPropertyName("id")] string Id);
 
@@ -18,8 +19,10 @@ public sealed class IdentityTools
     {
         var user = accessor.HttpContext?.User;
         var id = user?.FindFirstValue(ClaimTypes.NameIdentifier);
+        
         if (user?.Identity?.IsAuthenticated != true || !FluxerOptions.IsId(id))
             throw new InvalidOperationException("Authentication required.");
+        
         return new FluxerProfile(id!);
     }
 }

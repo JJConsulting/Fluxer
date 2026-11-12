@@ -13,12 +13,14 @@ internal static class ServiceCollectionExtensions
         services.AddProblemDetails();
 
         var section = configuration.GetSection("Fluxer");
+        
         services.AddSingleton<IValidateOptions<FluxerOptions>, FluxerOptionsValidator>();
         services.AddOptions<FluxerOptions>().Bind(section).ValidateOnStart();
         services.AddMemoryCache(options =>
         {
             options.SizeLimit = 1000;
         });
+        
         services.AddSingleton<OAuthBridge>();
         services.AddFluxerClient(section);
         services.AddHttpClient(FluxerOptions.Scheme, client =>
@@ -29,11 +31,15 @@ internal static class ServiceCollectionExtensions
         {
             AllowAutoRedirect = false, UseCookies = false
         }).RemoveAllLoggers();
+        
         services.AddAuthentication(FluxerOptions.Scheme)
             .AddScheme<AuthenticationSchemeOptions, FluxerAuthenticationHandler>(FluxerOptions.Scheme, _ => { });
+        
         services.AddHttpContextAccessor();
-        services.AddMcpServer().WithHttpTransport(options => options.Stateless = true)
-            .WithTools<IdentityTools>().WithTools<DmTools>();
+        services.AddMcpServer()
+            .WithHttpTransport(options => options.Stateless = true)
+            .WithTools<IdentityTools>()
+            .WithTools<DmTools>();
 
         return services;
     }

@@ -1,0 +1,12 @@
+**
+!global.json
+!src/
+!src/**
+**/bin/
+**/obj/
+**/appsettings*.json
+**/*.pfx
+**/*.p12
+**/*.db
+**/*.db-shm
+**/*.db-wal

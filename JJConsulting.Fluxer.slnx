@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="tests/JJConsulting.Fluxer.Client.Tests/JJConsulting.Fluxer.Client.Tests.csproj" />
+    <Project Path="tests/JJConsulting.Fluxer.Mcp.Tests/JJConsulting.Fluxer.Mcp.Tests.csproj" />
+  </Folder>
+  <Project Path="src/JJConsulting.Fluxer.Client/JJConsulting.Fluxer.Client.csproj" />
+  <Project Path="src/JJConsulting.Fluxer.Mcp/JJConsulting.Fluxer.Mcp.csproj" />
+</Solution>

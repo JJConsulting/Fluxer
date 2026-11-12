@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <TargetFramework>net11.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <UserSecretsId>8482ff27-021b-43e3-aa9e-4dfeea86cf37</UserSecretsId>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.1.0"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="../JJConsulting.Fluxer.Client/JJConsulting.Fluxer.Client.csproj" />
+    </ItemGroup>
+</Project>

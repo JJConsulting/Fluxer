@@ -10,6 +10,11 @@ This repository provides **two integrations with Fluxer**:
 Use the REST client to integrate Fluxer into your application, or run the MCP server to expose Fluxer tools to an AI assistant. Setup instructions for each integration follow below.
 
 ## REST API Client
+
+```bash
+dotnet add package JJConsulting.Fluxer.Client --version 0.1.0
+```
+
 Typed .NET client for Fluxer's identity and Admin APIs, with dependency injection support.
 
 ```json
@@ -61,7 +66,106 @@ if (dmResult is FluxerDmPage page)
 
 ## MCP Server
 
-Requires **.NET SDK 11.0.100**, a dedicated Fluxer OAuth application, and an Admin API key. The key and its owner need `user:list:dm_channels` and `message:lookup`; the owner also needs `admin:authenticate`.
+Requires a dedicated Fluxer OAuth application and an Admin API key. The key and its owner need `user:list:dm_channels` and `message:lookup`; the owner also needs `admin:authenticate`.
+
+### Install on your server with Docker Compose
+
+Prerequisites: Git, Docker Engine with the Compose plugin (`docker compose`), and a public hostname with an HTTPS reverse proxy on the server. The Docker build includes the .NET SDK; you do not need to install .NET on the host.
+
+1. Clone the repository and create the environment file:
+
+   ```bash
+   git clone https://github.com/JJConsulting/JJConsulting.Fluxer.git
+   cd JJConsulting.Fluxer
+   cp .env.example .env
+   chmod 600 .env
+   ```
+
+2. Edit `.env` with your instance and credentials:
+
+   ```dotenv
+   ALLOWED_HOSTS=localhost;127.0.0.1;[::1];mcp.example.com
+   FLUXER_API_BASE_URL=https://your-fluxer-instance.com/api
+   FLUXER_CLIENT_ID=YOUR_CLIENT_ID
+   FLUXER_CLIENT_SECRET=YOUR_CLIENT_SECRET
+   FLUXER_ADMIN_API_KEY=YOUR_ADMIN_API_KEY
+   FLUXER_PUBLIC_URL=https://mcp.example.com
+   FLUXER_CLIENT_REDIRECT_URI=https://chatgpt.com/connector_platform_oauth_redirect
+   ```
+
+   Replace `mcp.example.com` with your public hostname. `FLUXER_API_BASE_URL` must use HTTPS and omit `/v1` and the trailing slash. `FLUXER_PUBLIC_URL` must be the public HTTPS origin, without a path or trailing slash. Use the exact ChatGPT callback for `FLUXER_CLIENT_REDIRECT_URI` (see **Connect ChatGPT** below). Keep `.env` private and out of Git.
+
+3. In your Fluxer OAuth application, register `https://mcp.example.com/auth/fluxer/callback` as a redirect URI.
+
+4. Build and start the MCP server:
+
+   ```bash
+   docker compose up -d --build
+   docker compose ps
+   docker compose logs --tail=100 fluxer-mcp
+   curl --fail http://127.0.0.1:8080/health
+   ```
+
+   The supplied `compose.yaml` publishes HTTP port `8080` only on the host's loopback interface and restarts the container unless explicitly stopped. Run one instance because pending OAuth logins are stored in memory.
+
+5. Configure **Nginx or Caddy** below, then verify the public endpoints.
+
+   Both examples assume the proxy runs on the host. Point `mcp.example.com` to your server and allow inbound ports `80` and `443`.
+
+   #### Nginx
+
+   Add this to your existing HTTPS server block for `mcp.example.com`, with its TLS certificate configured:
+
+   ```nginx
+   location / {
+       proxy_pass http://127.0.0.1:8080;
+       proxy_http_version 1.1;
+       proxy_set_header Host $host;
+       proxy_set_header Connection "";
+       proxy_buffering off;
+       proxy_read_timeout 3600s;
+   }
+   ```
+
+   ```bash
+   sudo nginx -t && sudo systemctl reload nginx
+   ```
+
+   #### Caddy
+
+   Add to `/etc/caddy/Caddyfile`:
+
+   ```caddyfile
+   mcp.example.com {
+       reverse_proxy 127.0.0.1:8080 {
+           flush_interval -1
+       }
+   }
+   ```
+
+   Caddy manages HTTPS certificates automatically. See the [Caddy reverse proxy documentation](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy).
+
+   ```bash
+   sudo caddy validate --config /etc/caddy/Caddyfile
+   sudo systemctl reload caddy
+   ```
+
+   If the proxy runs in Docker, use a shared network and upstream `fluxer-mcp:8080` instead of `127.0.0.1:8080`.
+
+6. Verify the public endpoints, then follow **Connect ChatGPT** below using `https://mcp.example.com/mcp`:
+
+   ```bash
+   curl --fail https://mcp.example.com/health
+   curl --fail https://mcp.example.com/.well-known/oauth-authorization-server
+   ```
+
+   Both endpoints should return HTTP `200`, and the OAuth metadata's `issuer` should equal `FLUXER_PUBLIC_URL`.
+
+After editing `.env`, run `docker compose up -d` to apply changes. To update the application, run `git pull` followed by `docker compose up -d --build`. To stop it, run `docker compose down`. Restarts discard pending OAuth logins; retry any sign-in that was in progress.
+
+### Run locally with .NET
+
+Requires **.NET SDK 11.0.100**.
 
 Create `src/JJConsulting.Fluxer.Mcp/appsettings.Development.json` (git-ignored):
 
@@ -133,5 +237,3 @@ Connection failing? Check that public `/health` and `/.well-known/oauth-authoriz
 - Activity returns up to 100 messages per channel. Continue with `NextChannelBefore` for more channels; use `get_my_dm_messages` with the same dates and each conversation's `NextBefore` while `HasMore` is true.
 - Search returns at most 100 matches (`Truncated` indicates more). Empty results may mean the instance has no search index.
 - Run one MCP process: pending OAuth logins are stored in memory and lost on restart.
-
-

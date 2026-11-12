@@ -1,7 +1,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:11.0.100 AS build
 WORKDIR /src
 
-COPY global.json ./
+COPY global.json Directory.Build.props Directory.Packages.props ./
 COPY src/JJConsulting.Fluxer.Client/JJConsulting.Fluxer.Client.csproj src/JJConsulting.Fluxer.Client/
 COPY src/JJConsulting.Fluxer.Mcp/JJConsulting.Fluxer.Mcp.csproj src/JJConsulting.Fluxer.Mcp/
 RUN dotnet restore src/JJConsulting.Fluxer.Mcp/JJConsulting.Fluxer.Mcp.csproj

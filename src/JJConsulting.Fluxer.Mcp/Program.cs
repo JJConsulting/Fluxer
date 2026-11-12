@@ -1,17 +1,24 @@
-using JJConsulting.Fluxer.Client;
+using JJConsulting.Fluxer.Client.Configuration;
 using JJConsulting.Fluxer.Mcp.Authentication;
 using JJConsulting.Fluxer.Mcp.Tools;
 using Microsoft.AspNetCore.Authentication;
 
 var builder = WebApplication.CreateBuilder(args);
+
 // Request diagnostics can include OAuth credentials and private message text.
 builder.Logging.AddFilter((category, level) =>
     category == "JJConsulting.Fluxer.Mcp" && level >= LogLevel.Information);
 builder.Services.AddProblemDetails();
+
 var configuration = builder.Configuration.GetSection("Fluxer");
 var fluxer = configuration.Get<FluxerOptions>() ?? new FluxerOptions();
 fluxer.Validate();
+
 builder.Services.AddSingleton(fluxer);
+builder.Services.AddMemoryCache(options =>
+{
+    options.SizeLimit = 1000;
+});
 builder.Services.AddSingleton<OAuthBridge>();
 builder.Services.AddFluxerClient(configuration);
 builder.Services.AddHttpClient(FluxerOptions.Scheme, client =>

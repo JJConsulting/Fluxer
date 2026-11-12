@@ -4,48 +4,14 @@ using System.Security.Claims;
 using JJConsulting.Fluxer.Client;
 using JJConsulting.Fluxer.Client.Models;
 using JJConsulting.Fluxer.Mcp.Authentication;
+using JJConsulting.Fluxer.Mcp.Models;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
 
 namespace JJConsulting.Fluxer.Mcp.Tools;
 
-public sealed record DmChannel(
-    string Id,
-    string OtherUserId,
-    string? Username = null,
-    string? DisplayName = null,
-    DateTimeOffset? LastMessageAt = null);
-
-public sealed record DmChannels(IReadOnlyList<DmChannel> Channels, string? NextBefore);
-
-public sealed record DmMessage(
-    string Id,
-    string AuthorId,
-    string Text,
-    DateTimeOffset Timestamp,
-    string? AuthorName = null);
-
-public sealed record DmMessages(IReadOnlyList<DmMessage> Messages, bool HasMore, string? NextBefore);
-
-public sealed record DmContacts(IReadOnlyList<DmChannel> Contacts, int Total, bool Truncated);
-
-public sealed record DmConversation(DmChannel Channel, DmMessage? LatestMessage);
-
-public sealed record DmRecentConversations(IReadOnlyList<DmConversation> Conversations, int Total);
-
-public sealed record DmConversationActivity(DmChannel Channel, DmMessages Messages);
-
-public sealed record DmActivity(
-    DateTimeOffset Start,
-    DateTimeOffset End,
-    IReadOnlyList<DmConversationActivity> Conversations,
-    int ScannedChannels,
-    string? NextChannelBefore);
-
-public sealed record DmSearch(string ChannelId, IReadOnlyList<DmMessage> Messages, int Total, bool Truncated);
-
 [McpServerToolType]
-public sealed class DmTools(IHttpContextAccessor accessor, IFluxerAdminClient admin)
+public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient admin)
 {
     [McpServerTool(Name = "list_my_dm_channels", ReadOnly = true, OpenWorld = false, UseStructuredContent = true)]
     [McpMeta("securitySchemes", JsonValue = """[{"type":"oauth2","scopes":["identify"]}]""")]

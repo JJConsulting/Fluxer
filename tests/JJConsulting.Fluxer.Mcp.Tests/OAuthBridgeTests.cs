@@ -150,6 +150,38 @@ public sealed class OAuthBridgeTests
     }
 
     [Fact]
+    public async Task Invalid_Verifier_Does_Not_Consume_The_Code()
+    {
+        using var factory = new McpFactory();
+        using var browser = factory.Browser(cookies: true);
+        var code = await AuthorizeAsync(browser);
+        using var invalid = await browser.PostAsync("/oauth/token",
+            new FormUrlEncodedContent(TokenForm(code, new string('b', 43))));
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        Assert.Equal(0, factory.Fluxer.TokenExchanges);
+
+        using var valid = await browser.PostAsync("/oauth/token", new FormUrlEncodedContent(TokenForm(code)));
+        Assert.Equal(HttpStatusCode.OK, valid.StatusCode);
+        Assert.Equal(1, factory.Fluxer.TokenExchanges);
+    }
+
+    [Fact]
+    public async Task Callback_Without_Correlation_Does_Not_Consume_The_Login()
+    {
+        using var factory = new McpFactory();
+        using var browser = factory.Browser(cookies: true);
+        var state = await BeginAsync(browser);
+        var callback = "/auth/fluxer/callback?code=fixture-code&state=" + state;
+        using var stranger = factory.Browser();
+        using var invalid = await stranger.GetAsync(callback);
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+
+        using var valid = await browser.GetAsync(callback);
+        Assert.Equal(HttpStatusCode.Redirect, valid.StatusCode);
+        Assert.True(QueryHelpers.ParseQuery(valid.Headers.Location!.Query).ContainsKey("code"));
+    }
+
+    [Fact]
     public async Task Concurrent_Code_Redemption_Only_Forwards_Once()
     {
         using var factory = new McpFactory();
@@ -222,6 +254,42 @@ public sealed class OAuthBridgeTests
         using var replay = await browser.PostAsync("/oauth/token", new FormUrlEncodedContent(TokenForm(code)));
         Assert.Equal(HttpStatusCode.BadRequest, replay.StatusCode);
         Assert.Equal(1, factory.Fluxer.TokenExchanges);
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("{}")]
+    [InlineData("[]")]
+    [InlineData("missing_refresh")]
+    [InlineData("null_scope")]
+    [InlineData("numeric_string")]
+    [InlineData("wrong_type")]
+    public async Task Invalid_Token_Payloads_Are_Rejected(string scenario)
+    {
+        using var factory = new McpFactory();
+        var payload = new Dictionary<string, object?>
+        {
+            ["access_token"] = "fixture-access", ["refresh_token"] = "fixture-refresh",
+            ["token_type"] = "Bearer", ["expires_in"] = 3600, ["scope"] = "identify"
+        };
+        switch (scenario)
+        {
+            case "missing_refresh": payload.Remove("refresh_token"); break;
+            case "null_scope": payload["scope"] = null; break;
+            case "numeric_string": payload["expires_in"] = "3600"; break;
+            case "wrong_type": payload["access_token"] = 123; break;
+        }
+        factory.Fluxer.TokenBody = scenario is "null" or "{}" or "[]"
+            ? scenario : JsonSerializer.Serialize(payload);
+        using var browser = factory.Browser();
+        using var response = await browser.PostAsync("/oauth/token", new FormUrlEncodedContent(
+            new Dictionary<string, string>
+            {
+                ["client_id"] = "123", ["grant_type"] = "refresh_token", ["refresh_token"] = "fixture-refresh"
+            }));
+        Assert.Equal(HttpStatusCode.BadGateway, response.StatusCode);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("server_error", json.RootElement.GetProperty("error").GetString());
     }
 
     [Fact]

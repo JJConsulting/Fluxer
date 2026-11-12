@@ -30,6 +30,8 @@ public sealed class AuthenticationTests
     [InlineData("inactive_only")]
     [InlineData("invalid_json")]
     [InlineData("wrong_types")]
+    [InlineData("null_body")]
+    [InlineData("numeric_string")]
     [InlineData("oversized")]
     [InlineData("redirect")]
     [InlineData("unavailable")]
@@ -45,6 +47,8 @@ public sealed class AuthenticationTests
             case "malformed": factory.Fluxer.IntrospectionBody = "{}"; break;
             case "inactive_only": factory.Fluxer.IntrospectionBody = "{\"active\":false}"; break;
             case "invalid_json": factory.Fluxer.IntrospectionBody = "not json"; break;
+            case "null_body": factory.Fluxer.IntrospectionBody = "null"; break;
+            case "numeric_string": factory.Fluxer.Claims["exp"] = "9999999999"; break;
             case "wrong_types": factory.Fluxer.Claims["exp"] = "invalid"; break;
             case "oversized": factory.Fluxer.IntrospectionBody = new string('x', 65537); break;
             case "redirect": factory.Fluxer.IntrospectionStatus = HttpStatusCode.Redirect; break;

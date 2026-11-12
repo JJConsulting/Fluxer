@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 
@@ -9,17 +10,23 @@ namespace JJConsulting.Fluxer.Mcp.Authentication;
 
 public sealed class FluxerAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> schemes,
-    ILoggerFactory logger, 
+    ILoggerFactory logger,
     UrlEncoder encoder,
-    IHttpClientFactory clients, FluxerOptions fluxer) : AuthenticationHandler<AuthenticationSchemeOptions>(schemes, logger, encoder)
+    IHttpClientFactory clients,
+    FluxerOptions fluxer) : AuthenticationHandler<AuthenticationSchemeOptions>(schemes, logger, encoder)
 {
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        if (!Request.Headers.ContainsKey("Authorization")) return AuthenticateResult.NoResult();
+        if (!Request.Headers.ContainsKey("Authorization")) 
+            return AuthenticateResult.NoResult();
+        
         if (!AuthenticationHeaderValue.TryParse(Request.Headers.Authorization, out var header) ||
             !string.Equals(header.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase) ||
             string.IsNullOrEmpty(header.Parameter) || !header.Parameter.All(c => c is >= '!' and <= '~'))
+        {
             return AuthenticateResult.Fail("Invalid bearer token.");
+        }
+
         try
         {
             using var client = clients.CreateClient(FluxerOptions.Scheme);
@@ -30,29 +37,33 @@ public sealed class FluxerAuthenticationHandler(
             });
             using var response = await client.PostAsync(fluxer.ApiBaseUrl + "/v1/oauth2/introspect", form,
                 Context.RequestAborted);
-            if (!response.IsSuccessStatusCode) return AuthenticateResult.Fail("Fluxer authentication unavailable.");
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Context.RequestAborted));
-            var token = document.RootElement;
-            var subject = token.GetProperty("sub").GetString();
+            if (!response.IsSuccessStatusCode)
+                return AuthenticateResult.Fail("Fluxer authentication unavailable.");
+            var token = JsonSerializer.Deserialize<IntrospectionResponse>(await response.Content.ReadAsStringAsync(Context.RequestAborted));
             // Use an OAuth application dedicated to this MCP: its client_id binds tokens to this service.
-            if (!token.GetProperty("active").GetBoolean() ||
-                token.GetProperty("client_id").GetString() != fluxer.ClientId ||
-                token.GetProperty("token_type").GetString() != "Bearer" || !FluxerOptions.IsId(subject) ||
-                token.GetProperty("exp").GetInt64() <= DateTimeOffset.UtcNow.ToUnixTimeSeconds() ||
-                token.GetProperty("scope").GetString()?.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                    .Contains(FluxerOptions.Scope) != true)
+            if (token is null || !token.Active || token.ClientId != fluxer.ClientId ||
+                token.TokenType != "Bearer" || !FluxerOptions.IsId(token.Subject) ||
+                token.ExpiresAt <= DateTimeOffset.UtcNow.ToUnixTimeSeconds() ||
+                token.Scope?.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains(FluxerOptions.Scope) != true)
                 return AuthenticateResult.Fail("Invalid Fluxer access token.");
             var identity = new ClaimsIdentity([
-                new Claim(ClaimTypes.NameIdentifier, subject!), new Claim("scope", FluxerOptions.Scope)
+                new Claim(ClaimTypes.NameIdentifier, token.Subject!), new Claim("scope", FluxerOptions.Scope)
             ], Scheme.Name);
             return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme.Name));
         }
-        catch (Exception error) when (error is HttpRequestException or OperationCanceledException or JsonException
-            or KeyNotFoundException or InvalidOperationException or FormatException)
+        catch (Exception error) when (error is HttpRequestException or OperationCanceledException or JsonException)
         {
             return AuthenticateResult.Fail("Fluxer authentication could not be verified.");
         }
     }
+
+    private sealed record IntrospectionResponse(
+        [property: JsonPropertyName("active")] bool Active,
+        [property: JsonPropertyName("client_id")] string? ClientId,
+        [property: JsonPropertyName("token_type")] string? TokenType,
+        [property: JsonPropertyName("sub")] string? Subject,
+        [property: JsonPropertyName("exp")] long ExpiresAt,
+        [property: JsonPropertyName("scope")] string? Scope);
 
     protected override Task HandleChallengeAsync(AuthenticationProperties properties)
     {

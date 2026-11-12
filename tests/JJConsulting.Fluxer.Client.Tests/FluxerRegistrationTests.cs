@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using JJConsulting.Fluxer.Client;
+using JJConsulting.Fluxer.Client.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -32,7 +33,7 @@ public class FluxerRegistrationTests
     public async Task Startup_Validation_Rejects_Unsafe_Or_Missing_Api_Base_Without_Echoing_Secrets(string? url)
     {
         var services = new ServiceCollection().AddFluxerClient(Configuration(url));
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         var error = await Assert.ThrowsAsync<OptionsValidationException>(async () => await provider.GetRequiredService<IAsyncStartupValidator>().ValidateAsync(CancellationToken.None));
         Assert.DoesNotContain("sentinel-key", error.ToString());
         Assert.DoesNotContain("user:secret", error.ToString());
@@ -45,7 +46,7 @@ public class FluxerRegistrationTests
     public async Task Startup_Validation_Rejects_Missing_Or_Invalid_Key(string? key)
     {
         var services = new ServiceCollection().AddFluxerClient(Configuration(key: key));
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         await Assert.ThrowsAsync<OptionsValidationException>(async () => await provider.GetRequiredService<IAsyncStartupValidator>().ValidateAsync(CancellationToken.None));
     }
 
@@ -61,7 +62,7 @@ public class FluxerRegistrationTests
     public async Task Startup_Validation_Rejects_Unbounded_Limits(string setting, string value)
     {
         var services = new ServiceCollection().AddFluxerClient(Configuration(setting: setting, value: value));
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         await Assert.ThrowsAsync<OptionsValidationException>(async () => await provider.GetRequiredService<IAsyncStartupValidator>().ValidateAsync(CancellationToken.None));
     }
 
@@ -69,13 +70,13 @@ public class FluxerRegistrationTests
     public async Task Both_Registered_Clients_Disable_Redirects_And_Cookies_And_Use_Distinct_Handlers()
     {
         var services = new ServiceCollection().AddFluxerClient(Configuration());
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         await provider.GetRequiredService<IAsyncStartupValidator>().ValidateAsync(CancellationToken.None);
-        Assert.IsType<FluxerAdminClient>(provider.GetRequiredService<IFluxerAdminClient>());
-        Assert.IsType<FluxerIdentityClient>(provider.GetRequiredService<IFluxerIdentityClient>());
+        Assert.IsType<FluxerAdminClient>(provider.GetRequiredService<FluxerAdminClient>());
+        Assert.IsType<FluxerIdentityClient>(provider.GetRequiredService<FluxerIdentityClient>());
         var factory = provider.GetRequiredService<IHttpMessageHandlerFactory>();
-        var admin = Primary(factory.CreateHandler(nameof(IFluxerAdminClient)));
-        var identity = Primary(factory.CreateHandler(nameof(IFluxerIdentityClient)));
+        var admin = Primary(factory.CreateHandler(nameof(FluxerAdminClient)));
+        var identity = Primary(factory.CreateHandler(nameof(FluxerIdentityClient)));
         Assert.NotSame(admin, identity);
         Assert.False(admin.AllowAutoRedirect);
         Assert.False(identity.AllowAutoRedirect);
@@ -91,14 +92,14 @@ public class FluxerRegistrationTests
         var services = new ServiceCollection();
         services.AddLogging(builder => builder.SetMinimumLevel(LogLevel.Trace).AddProvider(new CaptureLoggerProvider(entries)));
         services.AddFluxerClient(Configuration());
-        services.AddHttpClient<IFluxerAdminClient, FluxerAdminClient>()
+        services.AddHttpClient<FluxerAdminClient>()
             .ConfigurePrimaryHttpMessageHandler(() => new CaptureHandler(requests, "{\"channels\":[]}"));
-        services.AddHttpClient<IFluxerIdentityClient, FluxerIdentityClient>()
+        services.AddHttpClient<FluxerIdentityClient>()
             .ConfigurePrimaryHttpMessageHandler(() => new CaptureHandler(requests,
                 "{\"id\":\"123\",\"sub\":\"123\",\"username\":\"sentinel-message\"}"));
-        using var provider = services.BuildServiceProvider();
-        await provider.GetRequiredService<IFluxerAdminClient>().GetIndividualDmPageAsync("123");
-        await provider.GetRequiredService<IFluxerIdentityClient>().GetIdentityAsync("sentinel-oauth");
+        await using var provider = services.BuildServiceProvider();
+        await provider.GetRequiredService<FluxerAdminClient>().GetIndividualDmPageAsync("123");
+        await provider.GetRequiredService<FluxerIdentityClient>().GetIdentityAsync("sentinel-oauth");
         Assert.Equal(new[] { "Admin sentinel-key", "Bearer sentinel-oauth" }, requests.Select(r => r.Authorization));
         Assert.All(requests, r => Assert.Equal("fluxer.example", r.Url?.Host));
         Assert.DoesNotContain(entries, e => e.Contains("sentinel-", StringComparison.Ordinal));

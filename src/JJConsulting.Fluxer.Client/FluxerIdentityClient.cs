@@ -4,7 +4,6 @@ using Microsoft.Extensions.Options;
 namespace JJConsulting.Fluxer.Client;
 
 public sealed class FluxerIdentityClient(HttpClient client, IOptions<FluxerClientOptions> options)
-    : IFluxerIdentityClient
 {
     private readonly FluxerHttpTransport _transport = new(client, options.Value);
 

@@ -1,16 +1,16 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace JJConsulting.Fluxer.Mcp.Authentication;
 
 // shortcut: pending logins live in one process; use shared state before running multiple replicas.
-public sealed class OAuthBridge(FluxerOptions options, IHttpClientFactory clients) : IDisposable
+public sealed class OAuthBridge(FluxerOptions options, IHttpClientFactory clients, IMemoryCache cache)
 {
     public const string CallbackPath = "/auth/fluxer/callback";
-    private readonly MemoryCache _pending = new(new MemoryCacheOptions { SizeLimit = 1000 });
 
     private sealed record Login(string State, string Challenge, string Callback, string Correlation)
     {
@@ -39,14 +39,11 @@ public sealed class OAuthBridge(FluxerOptions options, IHttpClientFactory client
 
         var key = Random();
         var login = new Login(state, challenge, options.GetPublicUrl(context.Request) + CallbackPath, Random());
-        _pending.Set("login:" + key, login, new MemoryCacheEntryOptions
-            { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10), Size = 1 });
-        if (!_pending.TryGetValue("login:" + key, out _)) return Error("temporarily_unavailable", 503);
-        context.Response.Cookies.Append("__Host-FluxerMcp-" + key, login.Correlation, new CookieOptions
-        {
-            Secure = true, HttpOnly = true, SameSite = SameSiteMode.Lax, Path = "/",
-            MaxAge = TimeSpan.FromMinutes(10)
-        });
+        if (!Store("login:" + key, login, TimeSpan.FromMinutes(10)))
+            return Error("temporarily_unavailable", 503);
+        context.Response.Cookies.Append("__Host-FluxerMcp-" + key, login.Correlation,
+            CorrelationCookie(TimeSpan.FromMinutes(10)));
+
         return Results.Redirect(QueryHelpers.AddQueryString(options.ApiBaseUrl + "/v1/oauth2/authorize",
             new Dictionary<string, string?>
             {
@@ -61,14 +58,13 @@ public sealed class OAuthBridge(FluxerOptions options, IHttpClientFactory client
         var query = context.Request.Query;
         var state = query["state"].ToString();
         if (query.Any(p => p.Value.Count != 1) || state.Length != 43 ||
-            !_pending.TryGetValue<Login>("login:" + state, out var login) || login is null ||
+            !cache.TryGetValue<Login>("login:" + state, out var login) || login is null ||
             login.Callback != options.GetPublicUrl(context.Request) + CallbackPath ||
             context.Request.Cookies["__Host-FluxerMcp-" + state] != login.Correlation ||
             Interlocked.Exchange(ref login.Used, 1) != 0)
             return Error("invalid_request");
-        _pending.Remove("login:" + state);
-        context.Response.Cookies.Delete("__Host-FluxerMcp-" + state,
-            new CookieOptions { Secure = true, HttpOnly = true, SameSite = SameSiteMode.Lax, Path = "/" });
+        cache.Remove("login:" + state);
+        context.Response.Cookies.Delete("__Host-FluxerMcp-" + state, CorrelationCookie());
         var response = new Dictionary<string, string?>
         {
             ["state"] = login.State, ["iss"] = options.GetPublicUrl(context.Request)
@@ -78,10 +74,9 @@ public sealed class OAuthBridge(FluxerOptions options, IHttpClientFactory client
         else
         {
             var code = Random();
-            _pending.Set("code:" + code, new Code(login, upstreamCode), new MemoryCacheEntryOptions
-                { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(1), Size = 1 });
-            if (!_pending.TryGetValue("code:" + code, out _)) response["error"] = "temporarily_unavailable";
-            else response["code"] = code;
+            if (Store("code:" + code, new Code(login, upstreamCode), TimeSpan.FromMinutes(1)))
+                response["code"] = code;
+            else response["error"] = "temporarily_unavailable";
         }
 
         return Results.Redirect(QueryHelpers.AddQueryString(options.ClientRedirectUri, response));
@@ -99,14 +94,14 @@ public sealed class OAuthBridge(FluxerOptions options, IHttpClientFactory client
             var verifier = form["code_verifier"].ToString();
             if (code.Length != 43 || verifier.Length is < 43 or > 128 ||
                 !verifier.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '.' or '_' or '~') ||
-                !_pending.TryGetValue<Code>("code:" + code, out var pending) || pending is null ||
+                !cache.TryGetValue<Code>("code:" + code, out var pending) || pending is null ||
                 form["redirect_uri"] != options.ClientRedirectUri ||
                 pending.Login.Callback != options.GetPublicUrl(context.Request) + CallbackPath ||
                 WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(verifier))) !=
                 pending.Login.Challenge ||
                 Interlocked.Exchange(ref pending.Used, 1) != 0)
                 return Error("invalid_grant");
-            _pending.Remove("code:" + code);
+            cache.Remove("code:" + code);
             fields["code"] = pending.UpstreamCode;
             fields["redirect_uri"] = pending.Login.Callback;
             fields["code_verifier"] = verifier;
@@ -166,44 +161,58 @@ public sealed class OAuthBridge(FluxerOptions options, IHttpClientFactory client
             // Single-use codes and rotating refresh tokens must never be retried automatically.
             using var response = await client.PostAsync(options.ApiBaseUrl + "/v1/oauth2/" + endpoint,
                 form, context.RequestAborted);
-            if (endpoint == "token/revoke" && response.IsSuccessStatusCode) return Results.Ok();
+            if (endpoint == "token/revoke" && response.IsSuccessStatusCode)
+                return Results.Ok();
             if ((int)response.StatusCode >= 500 || (int)response.StatusCode == 429)
                 return Error("temporarily_unavailable", 503);
-            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(context.RequestAborted));
-            var json = document.RootElement;
+            var body = await response.Content.ReadAsStringAsync(context.RequestAborted);
             if (!response.IsSuccessStatusCode)
             {
-                var error = json.TryGetProperty("error", out var value) ? value.GetString() : null;
+                var error = JsonSerializer.Deserialize<ErrorResponse>(body)?.Error;
                 return error is "invalid_grant" or "invalid_request" or "invalid_scope" or "unsupported_grant_type"
                     ? Error(error)
                     : Error("server_error", 502);
             }
 
-            var access = json.GetProperty("access_token").GetString();
-            var refresh = json.GetProperty("refresh_token").GetString();
-            var scope = json.GetProperty("scope").GetString();
-            var expires = json.GetProperty("expires_in").GetInt64();
-            if (!Credential(access) || !Credential(refresh) || expires <= 0 ||
-                json.GetProperty("token_type").GetString() != "Bearer" ||
-                scope?.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains(FluxerOptions.Scope) != true)
+            var token = JsonSerializer.Deserialize<TokenResponse>(body);
+            if (token is null || !Credential(token.AccessToken) || !Credential(token.RefreshToken) ||
+                token.ExpiresIn <= 0 || token.TokenType != "Bearer" ||
+                token.Scope?.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains(FluxerOptions.Scope) != true)
                 return Error("server_error", 502);
-            return Results.Json(new
-            {
-                access_token = access, refresh_token = refresh, token_type = "Bearer",
-                expires_in = expires, scope
-            });
+            return Results.Json(token);
         }
-        catch (Exception error) when (error is HttpRequestException or OperationCanceledException or JsonException
-                                          or KeyNotFoundException or InvalidOperationException or FormatException)
+        catch (Exception error) when (error is HttpRequestException or OperationCanceledException or JsonException)
         {
             return Error("server_error", 502);
         }
     }
 
-    private static bool Credential(string? value, int maximum = 4096) =>
-        value is { Length: > 0 } && value.Length <= maximum && value.All(c => c is >= '!' and <= '~');
+    private bool Store(string key, object value, TimeSpan lifetime)
+    {
+        cache.Set(key, value, new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = lifetime, Size = 1 });
+        return cache.TryGetValue(key, out _);
+    }
 
-    private static string Random() => WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
-    private static IResult Error(string error, int status = 400) => Results.Json(new { error }, statusCode: status);
-    public void Dispose() => _pending.Dispose();
+    private static CookieOptions CorrelationCookie(TimeSpan? maxAge = null)
+    {
+        return new CookieOptions
+        {
+            Secure = true, HttpOnly = true, SameSite = SameSiteMode.Lax, Path = "/", MaxAge = maxAge
+        };
+    }
+
+    private static bool Credential(string? value, int maximum = 4096)
+    {
+        return value is { Length: > 0 } && value.Length <= maximum && value.All(c => c is >= '!' and <= '~');
+    }
+
+    private static string Random()
+    {
+        return WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
+    }
+
+    private static IResult Error(string error, int status = 400)
+    {
+        return Results.Json(new ErrorResponse(error), statusCode: status);
+    }
 }

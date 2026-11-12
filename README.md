@@ -1,8 +1,62 @@
-# Fluxer MCP
+# JJConsulting.Fluxer
+
+.NET client and MCP server for Fluxer.
+
+## Fluxer Client
+
+Typed .NET client for Fluxer's identity and Admin APIs, with dependency injection support.
+
+```json
+{
+  "Fluxer": {
+    "ApiBaseUrl": "https://your-fluxer-instance.com/api",
+    "AdminApiKey": "YOUR_ADMIN_API_KEY"
+  }
+}
+```
+
+Register the clients and retrieve the signed-in user's DMs:
+
+```csharp
+using JJConsulting.Fluxer.Client;
+using JJConsulting.Fluxer.Client.Configuration;
+using JJConsulting.Fluxer.Client.Models;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+
+var builder = Host.CreateApplicationBuilder(args);
+builder.Services.AddFluxerClient(builder.Configuration.GetSection("Fluxer"));
+using var host = builder.Build();
+
+var identityClient = host.Services.GetRequiredService<FluxerIdentityClient>();
+var identityResult = await identityClient.GetIdentityAsync("USER_OAUTH_ACCESS_TOKEN");
+if (identityResult is FluxerError identityError)
+{
+    Console.WriteLine($"Identity failed: {identityError.Failure}");
+    return;
+}
+if (identityResult is not FluxerIdentity identity) 
+    return;
+
+var adminClient = host.Services.GetRequiredService<FluxerAdminClient>();
+var dmResult = await adminClient.GetIndividualDmPageAsync(identity.Id);
+if (dmResult is FluxerError dmError)
+{
+    Console.WriteLine($"DM lookup failed: {dmError.Failure}");
+    return;
+}
+if (dmResult is FluxerDmPage page)
+    foreach (var channel in page.Channels)
+        Console.WriteLine(channel.ChannelId);
+```
+
+`ApiBaseUrl` must use HTTPS and omit `/v1`. Keep the Admin API key on the server; your application must authorize access to each user and channel. `FluxerAdminClient` also provides `GetMessagesAsync` and `SearchMessagesAsync`.
+
+## Fluxer MCP
 
 HTTP MCP server: users sign in through Fluxer OAuth, and the server queries the Admin API with its own key, restricting data to the authenticated user.
 
-## Run locally
+### Run locally
 
 Requirements: **.NET SDK 11.0.100**, a Fluxer OAuth application dedicated to this MCP, and an Admin API key with permission to read DMs and messages.
 
@@ -48,7 +102,7 @@ curl https://localhost:7042/health
 
 Expect HTTP `200`. This endpoint only checks that the server is running; credentials are used during authenticated requests.
 
-## Connect an MCP client
+### Connect an MCP client
 
 1. In Fluxer, register **`https://localhost:7042/auth/fluxer/callback`** in the OAuth application. For a public deployment or ngrok tunnel, replace the origin with the public HTTPS URL.
 2. In your MCP client, configure the MCP URL (`https://localhost:7042/mcp` locally), select OAuth with a predefined client, enter the same `ClientId`, and leave **Client Secret empty**. The token endpoint uses authentication method `none` with S256 PKCE. Request scope `identify`.
@@ -61,7 +115,7 @@ The MCP bridges authorization, token exchange, refresh and revocation to Fluxer,
 
 Pending logins expire after 10 minutes; exchange codes expire after 1 minute and can be used once. Pending logins are kept in memory, so restart the login after a server restart. Run one MCP process; multiple replicas require shared login state.
 
-## Set up ChatGPT
+### Set up ChatGPT
 
 1. Start the MCP server and expose it through a public HTTPS URL. For local development, keep the server running and start `ngrok http https://localhost:7042` in another terminal. ChatGPT cannot reach your machine through a `localhost` URL.
 2. Add the public hostname to `AllowedHosts` and set `Fluxer:PublicUrl` to the public origin, such as `https://mcp.example.com`, without `/mcp` or a trailing slash. In the Fluxer OAuth application, register `https://mcp.example.com/auth/fluxer/callback`. Restart the server after changing its settings.

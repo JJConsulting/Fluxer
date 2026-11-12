@@ -32,7 +32,7 @@ public sealed class McpFactory(string? publicUrl = null) : WebApplicationFactory
         {
             services.AddSingleton<ILoggerProvider>(new CaptureLogs(Logs));
             services.AddHttpClient(FluxerOptions.Scheme).ConfigurePrimaryHttpMessageHandler(() => Fluxer);
-            services.AddHttpClient<IFluxerAdminClient, FluxerAdminClient>()
+            services.AddHttpClient<FluxerAdminClient>()
                 .ConfigurePrimaryHttpMessageHandler(() => Fluxer);
         });
     }

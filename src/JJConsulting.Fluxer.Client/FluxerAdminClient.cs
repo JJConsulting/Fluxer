@@ -4,7 +4,8 @@ using Microsoft.Extensions.Options;
 
 namespace JJConsulting.Fluxer.Client;
 
-public sealed class FluxerAdminClient : IFluxerAdminClient
+// Server-side primitives only: the caller must authorize the represented user and channel.
+public sealed class FluxerAdminClient
 {
     private readonly FluxerHttpTransport _transport;
     private readonly FluxerClientOptions _options;
@@ -46,6 +47,7 @@ public sealed class FluxerAdminClient : IFluxerAdminClient
         return result;
     }
 
+    // Returns only after pagination completes. Failures never produce a partial membership list.
     public async Task<FluxerResult<IReadOnlyList<FluxerDmChannel>>> GetAllIndividualDmsAsync(string userId,
         CancellationToken cancellationToken = default)
     {

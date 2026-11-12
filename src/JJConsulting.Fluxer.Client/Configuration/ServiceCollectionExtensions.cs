@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace JJConsulting.Fluxer.Client;
+namespace JJConsulting.Fluxer.Client.Configuration;
 
 public static class ServiceCollectionExtensions
 {
@@ -13,7 +13,7 @@ public static class ServiceCollectionExtensions
                 .Validate(options => options.IsValid(), "Fluxer client settings are missing or invalid.")
                 .ValidateOnStart();
 
-            services.AddHttpClient<IFluxerAdminClient, FluxerAdminClient>(client =>
+            services.AddHttpClient<FluxerAdminClient>(client =>
                     client.Timeout = Timeout.InfiniteTimeSpan)
                 .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
                 {
@@ -22,7 +22,7 @@ public static class ServiceCollectionExtensions
                 })
                 .RemoveAllLoggers();
 
-            services.AddHttpClient<IFluxerIdentityClient, FluxerIdentityClient>(client =>
+            services.AddHttpClient<FluxerIdentityClient>(client =>
                     client.Timeout = Timeout.InfiniteTimeSpan)
                 .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
                 {

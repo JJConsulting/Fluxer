@@ -1,3 +1,8 @@
 namespace JJConsulting.Fluxer.Mcp.Models;
 
-public sealed record DmMessages(IReadOnlyList<DmMessage> Messages, bool HasMore, string? NextBefore);
+public sealed class DmMessages
+{
+    public required IReadOnlyList<DmMessage> Messages { get; init; }
+    public required bool HasMore { get; init; }
+    public string? NextBefore { get; init; }
+}

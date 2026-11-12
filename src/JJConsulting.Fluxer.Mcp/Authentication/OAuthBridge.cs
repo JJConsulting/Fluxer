@@ -4,12 +4,15 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 
 namespace JJConsulting.Fluxer.Mcp.Authentication;
 
 // shortcut: pending logins live in one process; use shared state before running multiple replicas.
-public sealed class OAuthBridge(FluxerOptions options, IHttpClientFactory clients, IMemoryCache cache)
+public sealed class OAuthBridge(IOptions<FluxerOptions> settings, IHttpClientFactory clients, IMemoryCache cache)
 {
+    private readonly FluxerOptions options = settings.Value;
+
     public const string CallbackPath = "/auth/fluxer/callback";
 
     private sealed record Login(string State, string Challenge, string Callback, string Correlation)
@@ -84,8 +87,9 @@ public sealed class OAuthBridge(FluxerOptions options, IHttpClientFactory client
 
     public async Task<IResult> TokenAsync(HttpContext context)
     {
-        var form = await ReadFormAsync(context);
-        if (form is null) return Error("invalid_request");
+        var formResult = await ReadFormAsync(context);
+        if (formResult is OAuthError error) return Error(error.Error, error.StatusCode);
+        if (formResult is not IFormCollection form) return Error("invalid_request");
         var fields = new Dictionary<string, string>();
         var grant = form["grant_type"].ToString();
         if (grant == "authorization_code")
@@ -115,42 +119,46 @@ public sealed class OAuthBridge(FluxerOptions options, IHttpClientFactory client
 
         if (form.ContainsKey("scope") && form["scope"] != FluxerOptions.Scope) return Error("invalid_scope");
         fields["grant_type"] = grant;
-        return await ForwardAsync(context, fields, "token");
+        return ToHttpResult(await ForwardAsync(context, fields, "token"));
     }
 
     public async Task<IResult> RevokeAsync(HttpContext context)
     {
-        var form = await ReadFormAsync(context);
-        if (form is null || !Credential(form["token"].ToString())) return Error("invalid_request");
+        var formResult = await ReadFormAsync(context);
+        if (formResult is OAuthError error) return Error(error.Error, error.StatusCode);
+        if (formResult is not IFormCollection form || !Credential(form["token"].ToString()))
+            return Error("invalid_request");
         var hint = form["token_type_hint"].ToString();
         if (hint is not ("" or "access_token" or "refresh_token")) return Error("invalid_request");
         var fields = new Dictionary<string, string> { ["token"] = form["token"].ToString() };
         if (hint.Length > 0) fields["token_type_hint"] = hint;
-        return await ForwardAsync(context, fields, "token/revoke");
+        return ToHttpResult(await ForwardAsync(context, fields, "token/revoke"));
     }
 
-    private async Task<IFormCollection?> ReadFormAsync(HttpContext context)
+    private async Task<OAuthFormResult> ReadFormAsync(HttpContext context)
     {
         var request = context.Request;
         if (request.Headers.ContainsKey("Authorization") || request.ContentLength > 16384 ||
             !string.Equals(request.ContentType?.Split(';')[0].Trim(), "application/x-www-form-urlencoded",
-                StringComparison.OrdinalIgnoreCase)) return null;
+                StringComparison.OrdinalIgnoreCase))
+            return new OAuthError("invalid_request");
         try
         {
             request.EnableBuffering(bufferThreshold: 16384, bufferLimit: 16384);
             var form = await request.ReadFormAsync(context.RequestAborted);
             if (form.Count > 16 || form.Any(p => p.Value.Count != 1 || p.Value.ToString().Length > 4096) ||
                 form["client_id"] != options.ClientId || form.ContainsKey("client_secret") ||
-                form.ContainsKey("resource") && form["resource"] != options.GetPublicUrl(request) + "/mcp") return null;
+                form.ContainsKey("resource") && form["resource"] != options.GetPublicUrl(request) + "/mcp")
+                return new OAuthError("invalid_request");
             return form;
         }
         catch (Exception error) when (error is InvalidDataException or IOException or BadHttpRequestException)
         {
-            return null;
+            return new OAuthError("invalid_request");
         }
     }
 
-    private async Task<IResult> ForwardAsync(HttpContext context, Dictionary<string, string> fields, string endpoint)
+    private async Task<OAuthResult> ForwardAsync(HttpContext context, Dictionary<string, string> fields, string endpoint)
     {
         fields["client_id"] = options.ClientId;
         fields["client_secret"] = options.ClientSecret;
@@ -162,30 +170,39 @@ public sealed class OAuthBridge(FluxerOptions options, IHttpClientFactory client
             using var response = await client.PostAsync(options.ApiBaseUrl + "/v1/oauth2/" + endpoint,
                 form, context.RequestAborted);
             if (endpoint == "token/revoke" && response.IsSuccessStatusCode)
-                return Results.Ok();
+                return new Revoked();
             if ((int)response.StatusCode >= 500 || (int)response.StatusCode == 429)
-                return Error("temporarily_unavailable", 503);
+                return new OAuthError("temporarily_unavailable", 503);
             var body = await response.Content.ReadAsStringAsync(context.RequestAborted);
             if (!response.IsSuccessStatusCode)
             {
                 var error = JsonSerializer.Deserialize<ErrorResponse>(body)?.Error;
-                return error is "invalid_grant" or "invalid_request" or "invalid_scope" or "unsupported_grant_type"
-                    ? Error(error)
-                    : Error("server_error", 502);
+                if (error is "invalid_grant" or "invalid_request" or "invalid_scope" or "unsupported_grant_type")
+                    return new OAuthError(error);
+                
+                return new OAuthError("server_error", 502);
             }
 
             var token = JsonSerializer.Deserialize<TokenResponse>(body);
             if (token is null || !Credential(token.AccessToken) || !Credential(token.RefreshToken) ||
                 token.ExpiresIn <= 0 || token.TokenType != "Bearer" ||
                 token.Scope?.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains(FluxerOptions.Scope) != true)
-                return Error("server_error", 502);
-            return Results.Json(token);
+                return new OAuthError("server_error", 502);
+            return token;
         }
         catch (Exception error) when (error is HttpRequestException or OperationCanceledException or JsonException)
         {
-            return Error("server_error", 502);
+            return new OAuthError("server_error", 502);
         }
     }
+
+    private static IResult ToHttpResult(OAuthResult result) => result switch
+    {
+        TokenResponse token => Results.Json(token),
+        Revoked => Results.Ok(),
+        OAuthError error => Error(error.Error, error.StatusCode),
+        _ => Error("server_error", 502)
+    };
 
     private bool Store(string key, object value, TimeSpan lifetime)
     {

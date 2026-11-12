@@ -13,8 +13,10 @@ public sealed class FluxerAuthenticationHandler(
     ILoggerFactory logger,
     UrlEncoder encoder,
     IHttpClientFactory clients,
-    FluxerOptions fluxer) : AuthenticationHandler<AuthenticationSchemeOptions>(schemes, logger, encoder)
+    IOptions<FluxerOptions> options) : AuthenticationHandler<AuthenticationSchemeOptions>(schemes, logger, encoder)
 {
+    private readonly FluxerOptions fluxer = options.Value;
+
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         if (!Request.Headers.ContainsKey("Authorization")) 
@@ -39,7 +41,7 @@ public sealed class FluxerAuthenticationHandler(
                 Context.RequestAborted);
             if (!response.IsSuccessStatusCode)
                 return AuthenticateResult.Fail("Fluxer authentication unavailable.");
-            var token = JsonSerializer.Deserialize<IntrospectionResponse>(await response.Content.ReadAsStringAsync(Context.RequestAborted));
+            var token = JsonSerializer.Deserialize<FluxerTokenResponse>(await response.Content.ReadAsStringAsync(Context.RequestAborted));
             // Use an OAuth application dedicated to this MCP: its client_id binds tokens to this service.
             if (token is null || !token.Active || token.ClientId != fluxer.ClientId ||
                 token.TokenType != "Bearer" || !FluxerOptions.IsId(token.Subject) ||
@@ -56,14 +58,6 @@ public sealed class FluxerAuthenticationHandler(
             return AuthenticateResult.Fail("Fluxer authentication could not be verified.");
         }
     }
-
-    private sealed record IntrospectionResponse(
-        [property: JsonPropertyName("active")] bool Active,
-        [property: JsonPropertyName("client_id")] string? ClientId,
-        [property: JsonPropertyName("token_type")] string? TokenType,
-        [property: JsonPropertyName("sub")] string? Subject,
-        [property: JsonPropertyName("exp")] long ExpiresAt,
-        [property: JsonPropertyName("scope")] string? Scope);
 
     protected override Task HandleChallengeAsync(AuthenticationProperties properties)
     {

@@ -23,6 +23,26 @@ public class FluxerRegistrationTests
             }).Build().GetSection("FluxerClient");
     }
 
+    [Fact]
+    public void Registered_Validator_Reports_Each_Invalid_Setting()
+    {
+        var services = new ServiceCollection().AddFluxerClient(Configuration());
+        using var provider = services.BuildServiceProvider();
+        var validator = Assert.Single(provider.GetServices<IValidateOptions<FluxerClientOptions>>());
+        var result = validator.Validate(Options.DefaultName, new FluxerClientOptions
+        {
+            RequestTimeout = TimeSpan.Zero, MaxResponseBytes = 0, MaxRetries = -1,
+            MaxRetryDelay = TimeSpan.FromSeconds(-1), DmPageSize = 0, MaxDmPages = 0
+        });
+
+        Assert.True(result.Failed);
+        var failures = result.Failures!.ToArray();
+        Assert.Equal(8, failures.Length);
+        foreach (var setting in new[] { "ApiBaseUrl", "AdminApiKey", "RequestTimeout", "MaxResponseBytes",
+                     "MaxRetries", "MaxRetryDelay", "DmPageSize", "MaxDmPages" })
+            Assert.Single(failures, failure => failure.StartsWith($"Fluxer:{setting} "));
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("http://fluxer.example/api")]

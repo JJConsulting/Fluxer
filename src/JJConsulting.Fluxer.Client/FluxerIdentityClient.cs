@@ -15,10 +15,9 @@ public sealed class FluxerIdentityClient(HttpClient client, IOptions<FluxerClien
 
         if (response is FluxerError error)
             return error;
-        if (response is not FluxerIdentity identity)
-            return new FluxerError(FluxerFailure.InvalidResponse);
-        if (!FluxerAdminClient.IsId(identity.Id) || identity.Sub != identity.Id)
-            return new FluxerError(FluxerFailure.InvalidResponse);
+        if (response is not FluxerIdentity identity || !FluxerAdminClient.IsId(identity.Id) || identity.Sub != identity.Id)
+            return new FluxerError(new FluxerLocalError(FluxerFailure.InvalidResponse));
+
         return identity;
     }
 }

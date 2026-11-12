@@ -25,8 +25,11 @@ public sealed class FluxerAdminClient
         var query = PageQuery(page, 200);
         var response = await _transport.GetAsync<FluxerDmPage>(
             $"v1/admin/users/{userId}/dm-channels?type=dm&{query}", "Admin", _options.AdminApiKey, cancellationToken);
-        if (response is FluxerError error) return error;
-        if (response is not FluxerDmPage result) return InvalidResponse();
+
+        if (response is FluxerError error)
+            return error;
+        if (response is not FluxerDmPage result)
+            return InvalidResponse();
         if (result.Channels is null || result.Channels.Count > page.Limit)
             return InvalidResponse();
 
@@ -36,8 +39,10 @@ public sealed class FluxerAdminClient
                 channel.RecipientIds is null || channel.RecipientIds.Count > 100 ||
                 channel.RecipientIds.Any(id => !IsId(id)) || channel.Recipients is null ||
                 channel.Recipients.Count > 100 ||
-                channel.Recipients.Select(r => r?.Id).Distinct(StringComparer.Ordinal).Count() != channel.Recipients.Count ||
-                channel.Recipients.Any(r => r is null || !IsId(r.Id) || r.Username is null || !channel.RecipientIds.Contains(r.Id)) ||
+                channel.Recipients.Select(r => r?.Id).Distinct(StringComparer.Ordinal).Count() !=
+                channel.Recipients.Count ||
+                channel.Recipients.Any(r =>
+                    r is null || !IsId(r.Id) || r.Username is null || !channel.RecipientIds.Contains(r.Id)) ||
                 channel.LastMessageId is not null && !IsId(channel.LastMessageId))
                 return InvalidResponse();
         }
@@ -57,9 +62,9 @@ public sealed class FluxerAdminClient
         {
             var response = await GetIndividualDmPageAsync(userId,
                 new FluxerPageRequest(_options.DmPageSize, Before: before), cancellationToken);
-            if (response is FluxerError error) 
+            if (response is FluxerError error)
                 return error;
-            if (response is not FluxerDmPage page) 
+            if (response is not FluxerDmPage page)
                 return InvalidResponse();
             if (page.Channels.Count == 0)
                 return channels.AsReadOnly();
@@ -69,7 +74,7 @@ public sealed class FluxerAdminClient
             before = page.Channels.MinBy(channel => ParseId(channel.ChannelId))!.ChannelId;
         }
 
-        return new FluxerError(FluxerFailure.PaginationLimitExceeded);
+        return new FluxerError(new FluxerLocalError(FluxerFailure.PaginationLimitExceeded));
     }
 
     public async Task<FluxerResult<FluxerMessagePage>> GetMessagesAsync(string channelId,
@@ -82,10 +87,9 @@ public sealed class FluxerAdminClient
         var response = await _transport.GetAsync<FluxerMessagePage>(
             $"v1/admin/channels/{channelId}/messages?{query}", "Admin", _options.AdminApiKey, cancellationToken);
         if (response is FluxerError error) return error;
-        if (response is not FluxerMessagePage result) return InvalidResponse();
-        if (result.Messages is null || result.Messages.Count > page.Limit ||
-            result is { HasMore: true, Messages.Count: 0 })
-            return InvalidResponse();
+        if (response is not FluxerMessagePage result ||
+            result.Messages is null || result.Messages.Count > page.Limit ||
+            result is { HasMore: true, Messages.Count: 0 }) return InvalidResponse();
 
         foreach (var message in result.Messages)
         {
@@ -113,7 +117,8 @@ public sealed class FluxerAdminClient
         if (response is not FluxerMessageSearch result || result.Messages is null ||
             result.Messages.Count > limit || result.Total < result.Messages.Count ||
             result.Messages.Any(message => message is null || !IsId(message.Id) || message.ChannelId != channelId ||
-                !IsId(message.AuthorId) || message.Content is null || message.Timestamp == default) ||
+                                           !IsId(message.AuthorId) || message.Content is null ||
+                                           message.Timestamp == default) ||
             result.Messages.Select(m => m.Id).Distinct(StringComparer.Ordinal).Count() != result.Messages.Count)
             return InvalidResponse();
         return result;
@@ -157,11 +162,12 @@ public sealed class FluxerAdminClient
 
     private static void ValidateId(string id, bool allowZero = false)
     {
-        if (!IsId(id) && !(allowZero && id == "0")) throw new ArgumentException("Invalid Fluxer ID.", nameof(id));
+        if (!IsId(id) && !(allowZero && id == "0"))
+            throw new ArgumentException("Invalid Fluxer ID.", nameof(id));
     }
 
     private static FluxerError InvalidResponse()
     {
-        return new FluxerError(FluxerFailure.InvalidResponse);
+        return new FluxerError(new FluxerLocalError(FluxerFailure.InvalidResponse));
     }
 }

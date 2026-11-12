@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using JJConsulting.Fluxer.Client.Models;
+using JJConsulting.Fluxer.Client.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace JJConsulting.Fluxer.Client;
@@ -19,9 +20,10 @@ internal sealed class FluxerHttpTransport
 
     internal FluxerHttpTransport(HttpClient client, FluxerClientOptions options)
     {
-        if (!options.IsValid())
+        var validation = new FluxerClientOptionsValidator().Validate(Options.DefaultName, options);
+        if (validation.Failed)
             throw new OptionsValidationException(nameof(FluxerClientOptions), typeof(FluxerClientOptions),
-                ["Fluxer client settings are missing or invalid."]);
+                validation.Failures);
 
         _client = client;
         _options = options;
@@ -55,12 +57,12 @@ internal sealed class FluxerHttpTransport
                     using var response = await _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
                     var status = response.StatusCode;
                     if ((int)status is >= 300 and <= 399)
-                        return new FluxerError(FluxerFailure.RedirectRejected, status);
+                        return new FluxerError(new FluxerHttpError(FluxerFailure.RedirectRejected, status));
 
                     var bodyResult = await ReadBodyAsync(response.Content, token);
                     if (bodyResult is FluxerError bodyError) return bodyError;
                     if (bodyResult is not byte[] body)
-                        return new FluxerError(FluxerFailure.InvalidResponse);
+                        return new FluxerError(new FluxerLocalError(FluxerFailure.InvalidResponse));
                     token.ThrowIfCancellationRequested();
                     if (status == HttpStatusCode.OK)
                     {
@@ -68,18 +70,18 @@ internal sealed class FluxerHttpTransport
                         {
                             var result = JsonSerializer.Deserialize<T>(body, JsonOptions);
                             if (result is null)
-                                return new FluxerError(FluxerFailure.InvalidResponse);
+                                return new FluxerError(new FluxerLocalError(FluxerFailure.InvalidResponse));
                             token.ThrowIfCancellationRequested();
                             return result;
                         }
                         catch (JsonException)
                         {
                             // JSON exceptions can include upstream content; return only a local failure.
-                            return new FluxerError(FluxerFailure.InvalidResponse);
+                            return new FluxerError(new FluxerLocalError(FluxerFailure.InvalidResponse));
                         }
                     }
 
-                    FluxerFailure failure = status switch
+                    var failure = status switch
                     {
                         HttpStatusCode.Unauthorized => FluxerFailure.Unauthorized,
                         HttpStatusCode.Forbidden => FluxerFailure.Forbidden,
@@ -89,7 +91,9 @@ internal sealed class FluxerHttpTransport
                         _ => FluxerFailure.UnexpectedStatus
                     };
                     var retryAfter = GetRetryAfter(response, body);
-                    var error = new FluxerError(failure, status, retryAfter);
+                    FluxerError error = status == HttpStatusCode.TooManyRequests
+                        ? new FluxerRateLimitedError(retryAfter)
+                        : new FluxerHttpError(failure, status, retryAfter);
                     if (attempt >= _options.MaxRetries ||
                         !(IsTransient(status) || status == HttpStatusCode.TooManyRequests) ||
                         (status == HttpStatusCode.TooManyRequests && retryAfter is null))
@@ -104,13 +108,13 @@ internal sealed class FluxerHttpTransport
                 {
                     if (attempt >= _options.MaxRetries || error.HttpRequestError is not
                         (HttpRequestError.ConnectionError or HttpRequestError.NameResolutionError or HttpRequestError.ResponseEnded))
-                        return new FluxerError(FluxerFailure.UpstreamUnavailable);
+                        return new FluxerError(new FluxerLocalError(FluxerFailure.UpstreamUnavailable));
                     delay = Backoff(attempt);
                 }
                 catch (IOException)
                 {
                     if (attempt >= _options.MaxRetries)
-                        return new FluxerError(FluxerFailure.UpstreamUnavailable);
+                        return new FluxerError(new FluxerLocalError(FluxerFailure.UpstreamUnavailable));
                     delay = Backoff(attempt);
                 }
 
@@ -120,7 +124,7 @@ internal sealed class FluxerHttpTransport
         catch (OperationCanceledException)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return new FluxerError(FluxerFailure.Timeout);
+            return new FluxerError(new FluxerLocalError(FluxerFailure.Timeout));
         }
     }
 
@@ -139,7 +143,7 @@ internal sealed class FluxerHttpTransport
     private async Task<FluxerResult<byte[]>> ReadBodyAsync(HttpContent content, CancellationToken token)
     {
         if (content.Headers.ContentLength > _options.MaxResponseBytes)
-            return new FluxerError(FluxerFailure.ResponseTooLarge);
+            return new FluxerError(new FluxerLocalError(FluxerFailure.ResponseTooLarge));
 
         await using var stream = await content.ReadAsStreamAsync(token);
         using var body = new MemoryStream();
@@ -148,7 +152,7 @@ internal sealed class FluxerHttpTransport
         while ((read = await stream.ReadAsync(buffer, token)) > 0)
         {
             if (body.Length + read > _options.MaxResponseBytes)
-                return new FluxerError(FluxerFailure.ResponseTooLarge);
+                return new FluxerError(new FluxerLocalError(FluxerFailure.ResponseTooLarge));
             await body.WriteAsync(buffer.AsMemory(0, read), token);
         }
         return body.ToArray();
@@ -157,9 +161,9 @@ internal sealed class FluxerHttpTransport
     private static TimeSpan? GetRetryAfter(HttpResponseMessage response, byte[] body)
     {
         var header = response.Headers.RetryAfter;
-        TimeSpan? delay = header?.Delta;
+        var delay = header?.Delta;
         if (header?.Date is { } date)
-            {
+        {
             var remaining = date - DateTimeOffset.UtcNow;
             delay = remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
         }

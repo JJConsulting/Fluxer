@@ -1,3 +1,7 @@
 namespace JJConsulting.Fluxer.Mcp.Models;
 
-public sealed record DmConversationActivity(DmChannel Channel, DmMessages Messages);
+public sealed class DmConversationActivity
+{
+    public required DmChannel Channel { get; init; }
+    public required DmMessages Messages { get; init; }
+}

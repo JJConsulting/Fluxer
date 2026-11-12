@@ -26,9 +26,13 @@ public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient adm
             await admin.GetIndividualDmPageAsync(userId, new FluxerPageRequest(limit, Before: before),
                 cancellationToken);
         if (result is not FluxerDmPage page) throw Unavailable();
-        if (page.Channels.Any(channel => !IsAuthorized(channel, userId))) throw Denied();
-        return new DmChannels(page.Channels.Select(c => ProjectChannel(c, userId)).ToArray(),
-            page.Channels.Count == 0 ? null : page.Channels.MinBy(c => long.Parse(c.ChannelId))!.ChannelId);
+        if (page.Channels.Any(channel => !IsAuthorized(channel, userId)))
+            throw Denied();
+        return new DmChannels
+        {
+            Channels = page.Channels.Select(c => ProjectChannel(c, userId)).ToArray(),
+            NextBefore = page.Channels.Count == 0 ? null : page.Channels.MinBy(c => long.Parse(c.ChannelId))!.ChannelId
+        };
     }
 
     [McpServerTool(Name = "get_my_dm_messages", ReadOnly = true, OpenWorld = false, UseStructuredContent = true)]
@@ -59,7 +63,12 @@ public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient adm
         var matches = channels.Select(c => ProjectChannel(c, userId)).Where(c =>
             c.OtherUserId == query || c.Username?.Contains(query, StringComparison.OrdinalIgnoreCase) == true ||
             c.DisplayName?.Contains(query, StringComparison.OrdinalIgnoreCase) == true).ToArray();
-        return new DmContacts(matches.Take(limit).ToArray(), matches.Length, matches.Length > limit);
+        return new DmContacts
+        {
+            Contacts = matches.Take(limit).ToArray(),
+            Total = matches.Length,
+            Truncated = matches.Length > limit
+        };
     }
 
     [McpServerTool(Name = "get_my_recent_conversations", ReadOnly = true, OpenWorld = false,
@@ -77,11 +86,18 @@ public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient adm
                      .OrderByDescending(c => c.LastMessageId is null ? 0 : long.Parse(c.LastMessageId)).Take(limit))
         {
             var page = await ReadMessagesAsync(channel, 1, null, null, null, cancellationToken);
-            conversations.Add(new DmConversation(ProjectChannel(channel, userId), page.Messages.SingleOrDefault()));
+            conversations.Add(new DmConversation
+            {
+                Channel = ProjectChannel(channel, userId),
+                LatestMessage = page.Messages.SingleOrDefault()
+            });
         }
 
-        return new DmRecentConversations(conversations.OrderByDescending(c => c.LatestMessage?.Timestamp).ToArray(),
-            channels.Count);
+        return new DmRecentConversations
+        {
+            Conversations = conversations.OrderByDescending(c => c.LatestMessage?.Timestamp).ToArray(),
+            Total = channels.Count
+        };
     }
 
     [McpServerTool(Name = "get_my_dm_activity", ReadOnly = true, OpenWorld = false, UseStructuredContent = true)]
@@ -104,13 +120,24 @@ public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient adm
         {
             var messages = await ReadMessagesAsync(channel, 100, null, start, end, cancellationToken);
             if (messages.Messages.Count > 0 || messages.HasMore)
-                conversations.Add(new DmConversationActivity(ProjectChannel(channel, userId), messages));
+                conversations.Add(new DmConversationActivity
+                {
+                    Channel = ProjectChannel(channel, userId),
+                    Messages = messages
+                });
         }
 
-        return new DmActivity(start, end,
-            conversations.OrderByDescending(c => c.Messages.Messages.Max(m => (DateTimeOffset?)m.Timestamp)).ToArray(),
-            page.Channels.Count,
-            page.Channels.Count == 0 ? null : page.Channels.MinBy(c => long.Parse(c.ChannelId))!.ChannelId);
+        return new DmActivity
+        {
+            Start = start,
+            End = end,
+            Conversations = conversations
+                .OrderByDescending(c => c.Messages.Messages.Max(m => (DateTimeOffset?)m.Timestamp)).ToArray(),
+            ScannedChannels = page.Channels.Count,
+            NextChannelBefore = page.Channels.Count == 0
+                ? null
+                : page.Channels.MinBy(c => long.Parse(c.ChannelId))!.ChannelId
+        };
     }
 
     [McpServerTool(Name = "search_my_dm_messages", ReadOnly = true, OpenWorld = false, UseStructuredContent = true)]
@@ -123,11 +150,19 @@ public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient adm
         UserId();
         ValidateQuery(query);
         ValidatePage(limit, 100, null);
+
         var channel = await AuthorizedChannelAsync(channelId, cancellationToken);
         var result = await admin.SearchMessagesAsync(channel.ChannelId, query, limit, cancellationToken);
-        if (result is not FluxerMessageSearch search) throw Unavailable();
-        return new DmSearch(channel.ChannelId, search.Messages.Select(m => ProjectMessage(m, channel)).ToArray(),
-            search.Total, search.Total > search.Messages.Count);
+
+        if (result is not FluxerMessageSearch search)
+            throw Unavailable();
+        return new DmSearch
+        {
+            ChannelId = channel.ChannelId,
+            Messages = search.Messages.Select(m => ProjectMessage(m, channel)).ToArray(),
+            Total = search.Total,
+            Truncated = search.Total > search.Messages.Count
+        };
     }
 
     private async Task<DmMessages> ReadMessagesAsync(FluxerDmChannel channel, int limit, string? before,
@@ -145,22 +180,31 @@ public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient adm
             .Where(m => (start is null || m.Timestamp >= start) && (end is null || m.Timestamp < end))
             .OrderBy(m => m.Timestamp).ThenBy(m => long.Parse(m.Id)).Select(m => ProjectMessage(m, channel)).ToArray();
         var more = page.HasMore && (start is null || page.Messages.All(m => m.Timestamp >= start));
-        return new DmMessages(messages, more,
-            !more || page.Messages.Count == 0 ? null : page.Messages.MinBy(m => long.Parse(m.Id))!.Id);
+        return new DmMessages
+        {
+            Messages = messages,
+            HasMore = more,
+            NextBefore = !more || page.Messages.Count == 0 ? null : page.Messages.MinBy(m => long.Parse(m.Id))!.Id
+        };
     }
 
     private async Task<IReadOnlyList<FluxerDmChannel>> AuthorizedChannelsAsync(CancellationToken ct)
     {
         var userId = UserId();
         var result = await admin.GetAllIndividualDmsAsync(userId, ct);
-        if (result is not IReadOnlyList<FluxerDmChannel> channels) throw Unavailable();
-        if (channels.Any(c => !IsAuthorized(c, userId))) throw Denied();
+
+        if (result is not IReadOnlyList<FluxerDmChannel> channels)
+            throw Unavailable();
+        if (channels.Any(c => !IsAuthorized(c, userId)))
+            throw Denied();
         return channels;
     }
 
     private async Task<FluxerDmChannel> AuthorizedChannelAsync(string id, CancellationToken ct)
     {
-        if (!FluxerOptions.IsId(id)) throw Denied();
+        if (!FluxerOptions.IsId(id)) 
+            throw Denied();
+        
         return (await AuthorizedChannelsAsync(ct)).SingleOrDefault(c => c.ChannelId == id) ?? throw Denied();
     }
 
@@ -168,17 +212,30 @@ public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient adm
     {
         var otherId = channel.RecipientIds.Single(id => id != userId);
         var other = channel.Recipients.SingleOrDefault(r => r.Id == otherId);
-        return new DmChannel(channel.ChannelId, otherId, other?.Username, Name(other?.GlobalName, other?.Username),
-            channel.LastMessageId is null
+        return new DmChannel
+        {
+            Id = channel.ChannelId,
+            OtherUserId = otherId,
+            Username = other?.Username,
+            DisplayName = Name(other?.GlobalName, other?.Username),
+            LastMessageAt = channel.LastMessageId is null
                 ? null
-                : DateTimeOffset.FromUnixTimeMilliseconds((long.Parse(channel.LastMessageId) >> 22) + 1420070400000L));
+                : DateTimeOffset.FromUnixTimeMilliseconds((long.Parse(channel.LastMessageId) >> 22) + 1420070400000L)
+        };
     }
 
     private static DmMessage ProjectMessage(FluxerMessage message, FluxerDmChannel channel)
     {
         var author = channel.Recipients.SingleOrDefault(r => r.Id == message.AuthorId);
-        return new DmMessage(message.Id, message.AuthorId, message.Content, message.Timestamp,
-            Name(message.AuthorGlobalName, message.AuthorUsername) ?? Name(author?.GlobalName, author?.Username));
+        return new DmMessage
+        {
+            Id = message.Id,
+            AuthorId = message.AuthorId,
+            Text = message.Content,
+            Timestamp = message.Timestamp,
+            AuthorName = Name(message.AuthorGlobalName, message.AuthorUsername) ??
+                         Name(author?.GlobalName, author?.Username)
+        };
     }
 
     private static string? Name(string? displayName, string? username) =>
@@ -212,7 +269,8 @@ public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient adm
 
     private static void ValidateRange(DateTimeOffset? start, DateTimeOffset? end)
     {
-        if (start is null && end is null) return;
+        if (start is null && end is null) 
+            return;
         if (start is null || end is null || start >= end ||
             start < DateTimeOffset.FromUnixTimeMilliseconds(1420070400000L))
             throw new McpException("Supply start before end, both with UTC offsets, from 2015 onward.");

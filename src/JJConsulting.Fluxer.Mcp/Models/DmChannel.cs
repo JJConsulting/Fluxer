@@ -1,8 +1,10 @@
 namespace JJConsulting.Fluxer.Mcp.Models;
 
-public sealed record DmChannel(
-    string Id,
-    string OtherUserId,
-    string? Username = null,
-    string? DisplayName = null,
-    DateTimeOffset? LastMessageAt = null);
+public sealed class DmChannel
+{
+    public required string Id { get; init; }
+    public required string OtherUserId { get; init; }
+    public string? Username { get; init; }
+    public string? DisplayName { get; init; }
+    public DateTimeOffset? LastMessageAt { get; init; }
+}

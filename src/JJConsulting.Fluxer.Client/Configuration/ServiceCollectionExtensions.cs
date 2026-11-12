@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace JJConsulting.Fluxer.Client.Configuration;
 
@@ -9,8 +10,8 @@ public static class ServiceCollectionExtensions
     {
         public IServiceCollection AddFluxerClient(IConfigurationSection configuration)
         {
+            services.AddSingleton<IValidateOptions<FluxerClientOptions>, FluxerClientOptionsValidator>();
             services.AddOptions<FluxerClientOptions>().Bind(configuration)
-                .Validate(options => options.IsValid(), "Fluxer client settings are missing or invalid.")
                 .ValidateOnStart();
 
             services.AddHttpClient<FluxerAdminClient>(client =>

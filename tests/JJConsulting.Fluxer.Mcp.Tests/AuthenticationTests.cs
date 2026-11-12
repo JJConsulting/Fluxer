@@ -1,3 +1,6 @@
+using JJConsulting.Fluxer.Mcp.Authentication;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using System.Net;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
@@ -7,6 +10,20 @@ namespace JJConsulting.Fluxer.Mcp.Tests;
 
 public sealed class AuthenticationTests
 {
+    [Fact]
+    public void Registered_Validator_Reports_Each_Invalid_Setting()
+    {
+        using var factory = new McpFactory();
+        var validator = Assert.Single(factory.Services.GetServices<IValidateOptions<FluxerOptions>>());
+        var result = validator.Validate(Options.DefaultName, new FluxerOptions { PublicUrl = "invalid" });
+
+        Assert.True(result.Failed);
+        var failures = result.Failures!.ToArray();
+        Assert.Equal(5, failures.Length);
+        foreach (var setting in new[] { "PublicUrl", "ApiBaseUrl", "ClientRedirectUri", "ClientId", "ClientSecret" })
+            Assert.Single(failures, failure => failure.StartsWith($"Fluxer:{setting} "));
+    }
+
     [Fact]
     public async Task Upstream_Access_Token_Authenticates_Without_A_Local_Login_Or_Database()
     {
@@ -191,7 +208,7 @@ public sealed class AuthenticationTests
     public void Invalid_Public_Url_Overrides_Fail_At_Startup(string publicUrl)
     {
         using var factory = new McpFactory(publicUrl);
-        Assert.Throws<InvalidOperationException>(() => factory.Browser());
+        Assert.Throws<OptionsValidationException>(() => factory.Browser());
     }
 
     [Fact]
@@ -199,7 +216,7 @@ public sealed class AuthenticationTests
     {
         using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             builder.UseSetting("Fluxer:ApiBaseUrl", ""));
-        Assert.Throws<InvalidOperationException>(() => factory.CreateClient());
+        Assert.Throws<OptionsValidationException>(() => factory.CreateClient());
     }
 
     [Fact]

@@ -60,8 +60,10 @@ public sealed class FluxerAuthenticationHandler(
             if (token.Scope?.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains(FluxerOptions.Scope) != true)
                 return AuthenticateResult.Fail("Invalid Fluxer access token.");
             var identity = new ClaimsIdentity([
-                new Claim(ClaimTypes.NameIdentifier, token.Subject!), new Claim("scope", FluxerOptions.Scope)
+                new Claim(ClaimTypes.NameIdentifier, token.Subject!)
             ], Scheme.Name);
+            foreach (var scope in token.Scope!.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                identity.AddClaim(new Claim("scope", scope));
             return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), Scheme.Name));
         }
         catch (Exception error) when (error is HttpRequestException or OperationCanceledException or JsonException)

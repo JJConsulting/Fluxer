@@ -1,3 +1,10 @@
+using System.Security.Claims;
+using JJConsulting.Fluxer.Client;
+using JJConsulting.Fluxer.Mcp.Tools;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+
 namespace JJConsulting.Fluxer.Mcp.Tests;
 
 public sealed class GuildToolsTests
@@ -25,6 +32,62 @@ public sealed class GuildToolsTests
     }
 
     [Theory]
+    [InlineData("456", "66560", "0", "0", false, false, true, null, true, true)]
+    [InlineData("789", "66560", "0", "0", false, false, true, null, true, true)]
+    [InlineData("789", "66560", "1024", "0", false, false, false, null, true, true)]
+    [InlineData("789", "0", "0", "66560", false, false, true, null, true, true)]
+    [InlineData("789", "8", "66560", "0", false, false, true, null, true, true)]
+    [InlineData("789", "66560", "0", "0", true, false, false, null, true, true)]
+    [InlineData("789", "66560", "0", "0", false, true, false, null, true, true)]
+    [InlineData("789", "1024", "0", "0", false, false, false, null, true, true)]
+    [InlineData("789", "1024", "0", "0", false, false, true, -60, true, true)]
+    [InlineData("789", "1024", "0", "0", false, false, true, 60, false, true)]
+    [InlineData("789", "66560", "0", "0", false, false, false, null, true, false)]
+    public async Task Members_Receive_All_Authors_Only_In_Readable_Channels(string authorId, string permissions,
+        string deny, string allow, bool hidden, bool fail, bool readable, int? cutoffSeconds, bool messageVisible, bool grantScope)
+    {
+        using var factory = new McpFactory();
+        factory.Fluxer.GuildOwner = "567";
+        factory.Fluxer.MessageAuthor = authorId;
+        factory.Fluxer.GuildPermissions = permissions;
+        factory.Fluxer.ChannelDeny = deny;
+        factory.Fluxer.ChannelAllow = allow;
+        factory.Fluxer.HiddenGuildChannel = hidden;
+        factory.Fluxer.FailGuildPermissions = fail;
+        factory.Fluxer.MoreMessages = true;
+        factory.Fluxer.HistoryCutoff = cutoffSeconds is { } seconds ? factory.Fluxer.MessageTime.AddSeconds(seconds) : null;
+        var accessor = new HttpContextAccessor
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity(
+                    [new Claim(ClaimTypes.NameIdentifier, "456"), new Claim("scope", "identify"), new Claim("scope", "guilds")], "test"))
+            }
+        };
+        if (!grantScope)
+            ((ClaimsIdentity)accessor.HttpContext.User.Identity!).RemoveClaim(
+                accessor.HttpContext.User.FindAll("scope").Single(claim => claim.Value == "guilds"));
+        accessor.HttpContext.Request.Headers.Authorization = "Bearer first-user-token";
+        var tools = new GuildTools(accessor,
+            factory.Services.GetRequiredService<IOptions<FluxerClientOptions>>(),
+            factory.Services.GetRequiredService<FluxerAdminClient>());
+        if (!readable)
+        {
+            await Assert.ThrowsAsync<ModelContextProtocol.McpException>(() => tools.MessagesAsync("3000", "4000"));
+            Assert.Equal(0, factory.Fluxer.MessageReads);
+            return;
+        }
+        var channels = await tools.ChannelsAsync("3000");
+        Assert.Contains(channels.Channels, channel => channel.Id == "4000");
+        var messages = await tools.MessagesAsync("3000", "4000");
+        Assert.Equal(messageVisible ? 1 : 0, messages.Messages.Count);
+        Assert.All(messages.Messages, message => Assert.Equal(authorId, message.AuthorId));
+        Assert.True(messages.HasMore);
+        Assert.Equal("2000", messages.NextBefore);
+        Assert.Equal(1, factory.Fluxer.MessageReads);
+    }
+
+    [Theory]
     [InlineData("list_my_dm_channels", false)]
     [InlineData("list_my_guilds", true)]
     public async Task Zero_Cursor_Keeps_Each_Tools_Existing_Pagination_Rules(string tool, bool isError)
@@ -38,7 +101,6 @@ public sealed class GuildToolsTests
 
     [Theory]
     [InlineData("non_member")]
-    [InlineData("not_owner")]
     [InlineData("guild_nsfw")]
     [InlineData("channel_nsfw")]
     [InlineData("category")]
@@ -52,7 +114,6 @@ public sealed class GuildToolsTests
         using var factory = new McpFactory();
         switch (scenario)
         {
-            case "not_owner": factory.Fluxer.GuildOwner = "567"; break;
             case "guild_nsfw": factory.Fluxer.GuildNsfw = true; break;
             case "channel_nsfw": factory.Fluxer.GuildChannelNsfw = true; break;
             case "category": factory.Fluxer.GuildChannelType = 4; break;

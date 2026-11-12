@@ -61,7 +61,7 @@ if (dmResult is FluxerDmPage page)
         Console.WriteLine(channel.ChannelId);
 ```
 
-`ApiBaseUrl` must use HTTPS and omit `/v1`. Keep the Admin API key on the server; your application must authorize access to each user and channel. `FluxerAdminClient` also provides `GetMessagesAsync`, `SearchMessagesAsync`, `GetUserGuildPageAsync` and `GetGuildAsync`. Guild queries return typed models through the same transport and error handling as DM queries.
+`ApiBaseUrl` must use HTTPS and omit `/v1`. Keep the Admin API key on the server; your application must authorize access to each user and channel. `FluxerAdminClient` also provides `GetMessagesAsync`, `SearchMessagesAsync`, `GetUserGuildPageAsync` and `GetGuildAsync`. Guild queries return typed models through the same transport and error handling as DM queries. `FluxerAdminClient.GetReadableChannelsAsync(guildId, userId, accessToken)` computes readable channels and history cutoffs using the user's `guilds` OAuth scope and the Admin key's `guild:list:members` ACL. The caller must bind `userId` to the authenticated token owner.
 
 
 ## MCP Server
@@ -181,7 +181,7 @@ Prerequisites: Git, Docker Engine with the Compose plugin (`docker compose`), an
 
    If the proxy runs in Docker, use a shared network and upstream `fluxer-mcp:8080` instead of `127.0.0.1:8080`.
 
-6. Verify the public endpoints, then follow **Connect ChatGPT** below using `https://mcp.example.com/mcp`:
+6. Verify the public endpoints, then follow **Connect ChatGPT** below using `https://mcp.example.com`:
 
    ```bash
    curl --fail https://mcp.example.com/health
@@ -236,7 +236,7 @@ Use the tunnel hostname in `AllowedHosts` and its HTTPS origin in `PublicUrl`. R
 
    | Setting | Value |
    | --- | --- |
-   | MCP server URL | `https://YOUR_PUBLIC_HOST/mcp` |
+   | MCP server URL | `https://YOUR_PUBLIC_HOST` |
    | Authentication | OAuth |
    | Client mode | Pre-defined |
    | Client ID | Same as `Fluxer:ClientId` |
@@ -264,10 +264,10 @@ Connection failing? Check that public `/health` and `/.well-known/oauth-authoriz
 | `get_my_dm_activity` | Read messages across your DMs for a period. |
 | `search_my_dm_messages` | Search text in one DM. |
 | `list_my_guilds` | List guilds you belong to; continue with `NextAfter`. |
-| `list_my_guild_channels` | List readable non-NSFW text channels in a guild you own. |
+| `list_my_guild_channels` | List non-NSFW text channels whose messages you can read. |
 | `get_my_guild_messages` | Read a guild channel; follow `NextBefore` while `HasMore`. |
 
-- Guild tools additionally require Admin ACLs `user:list:guilds` and `guild:lookup` on the key and its owner. Guild membership is verified using the authenticated user ID. Channel listing and reading currently require guild ownership: the Admin API omits channel permission overrides, so access for other members cannot be verified. NSFW guilds and channels are excluded.
+- Guild tools require Admin ACLs `user:list:guilds`, `guild:lookup`, and (for non-owners) `guild:list:members` on the key and its owner. Membership uses the authenticated user ID. Non-owners must reconnect to grant the OAuth `guilds` scope: channel visibility comes from `GET /guilds/{id}` using their bearer token. History access is computed from their roles and channel overwrites; the guild's history cutoff applies without `READ_MESSAGE_HISTORY`. Messages from all authors are returned within these permissions. NSFW guilds and channels are excluded. Filtered pages may be empty; continue with `NextBefore` while `HasMore` is true.
 - Dates require ISO-8601 timestamps with a UTC offset. For a day in São Paulo: `start: "2026-11-11T00:00:00-03:00"`, `end: "2026-11-12T00:00:00-03:00"`. Start is inclusive; end is exclusive.
 - Activity returns up to 100 messages per channel. Continue with `NextChannelBefore` for more channels; use `get_my_dm_messages` with the same dates and each conversation's `NextBefore` while `HasMore` is true.
 - Search returns at most 100 matches (`Truncated` indicates more). Empty results may mean the instance has no search index.

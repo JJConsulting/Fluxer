@@ -45,7 +45,7 @@ public sealed class McpFactory(string? publicUrl = null) : WebApplicationFactory
     public static Task<HttpResponseMessage> ToolAsync(HttpClient client, string? token, string name = "get_profile",
         object? arguments = null)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, "/mcp");
+        var request = new HttpRequestMessage(HttpMethod.Post, "/");
         if (token is not null) request.Headers.Authorization = new("Bearer", token);
         request.Headers.Accept.ParseAdd("application/json, text/event-stream");
         request.Content = new StringContent(JsonSerializer.Serialize(new
@@ -71,6 +71,13 @@ public sealed class FakeFluxer : HttpMessageHandler
     public string[]? Recipients;
     public bool FailMessages;
     public string GuildOwner = "456";
+    public string MessageAuthor = "789";
+    public string GuildPermissions = "66560";
+    public string ChannelDeny = "0";
+    public string ChannelAllow = "0";
+    public DateTimeOffset? HistoryCutoff;
+    public bool HiddenGuildChannel;
+    public bool FailGuildPermissions;
     public bool GuildNsfw;
     public bool GuildChannelNsfw;
     public int GuildChannelType;
@@ -150,6 +157,16 @@ public sealed class FakeFluxer : HttpMessageHandler
                 Headers = { Location = new Uri("https://unapproved.test/") }
             };
         }
+        if (path == "/api/v1/guilds/3000")
+        {
+            Assert.True(request.Headers.Authorization is { Scheme: "Bearer", Parameter: "first-user-token" });
+            if (FailGuildPermissions) return new(HttpStatusCode.Forbidden);
+            return Json(new { id = "3000", nsfw = false, message_history_cutoff = HistoryCutoff,
+                roles = new[] { new { id = "3000", permissions = GuildPermissions } },
+                channels = HiddenGuildChannel ? Array.Empty<object>() : new object[] {
+                    new { id = "4000", permission_overwrites = new[] {
+                        new { id = "456", type = 1, allow = ChannelAllow, deny = ChannelDeny } } } } });
+        }
         Assert.StartsWith("/api/v1/admin/", path);
         Assert.True(request.Headers.Authorization is { Scheme: "Admin", Parameter: "fixture-admin" });
         if (path.EndsWith("/guilds"))
@@ -160,6 +177,8 @@ public sealed class FakeFluxer : HttpMessageHandler
             return Json(new { guilds = query.ContainsKey("after") ? Array.Empty<object>() :
                 new object[] { new { id = "3000", name = "Fixture guild" } } });
         }
+        if (path == "/api/v1/admin/guilds/3000/members")
+            return Json(new { members = new[] { new { user = new { id = "456" }, roles = Array.Empty<string>() } } });
         if (path == "/api/v1/admin/guilds/3000")
             return Json(new { guild = new { id = "3000", owner_id = GuildOwner, nsfw = GuildNsfw,
                 channels = new[] { new { id = "4000", name = "general", type = GuildChannelType, nsfw = GuildChannelNsfw } } } });
@@ -205,7 +224,7 @@ public sealed class FakeFluxer : HttpMessageHandler
         var messages = new[] { new
         {
             id = channel == "999" ? "5000" : "2000", channel_id = SearchWrongChannel ? "8888" : channel,
-            author_id = "789", author_username = IncludeNames ? "gabriel" : null,
+            author_id = MessageAuthor, author_username = IncludeNames ? "gabriel" : null,
             author_global_name = IncludeNames ? "Gabriel Test" : null,
             content = "fixture message", timestamp = channel == "999" ? MessageTime.AddHours(2) : MessageTime
         } };

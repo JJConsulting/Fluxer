@@ -51,6 +51,52 @@ public sealed class FluxerAdminClient
         return guild;
     }
 
+    public async Task<FluxerResult<FluxerGuildAccess>> GetReadableChannelsAsync(
+        string guildId, string userId, string accessToken, CancellationToken cancellationToken = default)
+    {
+        if (!IsId(guildId)) throw new ArgumentException("Invalid Fluxer ID.", nameof(guildId));
+        if (!IsId(userId)) throw new ArgumentException("Invalid Fluxer ID.", nameof(userId));
+        var response = await _transport.GetAsync<FluxerGuildAccessResponse>(
+            $"v1/guilds/{guildId}", "Bearer", accessToken, cancellationToken);
+        if (response is FluxerError error) return error;
+        if (response is not FluxerGuildAccessResponse guild || guild.Id != guildId || guild.Nsfw || guild.Visiting ||
+            guild.Roles is null || guild.Channels is null ||
+            guild.Roles.Any(r => r is null || !IsId(r.Id) || r.Permissions is null) ||
+            guild.Channels.Any(c => c is null || !IsId(c.Id) || c.PermissionOverwrites is null ||
+                                    c.PermissionOverwrites.Any(o =>
+                                        o is null || !IsId(o.Id) || o.Allow is null || o.Deny is null)))
+            return InvalidResponse();
+
+        var memberRoles = new HashSet<string>();
+        var found = false;
+        for (var page = 0; page < _options.MaxDmPages; page++)
+        {
+            var membersResponse = await _transport.GetAsync<FluxerGuildMemberPage>(
+                $"v1/admin/guilds/{guildId}/members?limit=200&offset={page * 200}",
+                "Admin", _options.AdminApiKey, cancellationToken);
+            if (membersResponse is FluxerError memberError) return memberError;
+            if (membersResponse is not FluxerGuildMemberPage members || members.Members is null ||
+                members.Members.Count > 200 || members.Members.Any(m => m?.User is null ||
+                                                                        !IsId(m.User.Id) || m.Roles is null ||
+                                                                        m.Roles.Any(id => !IsId(id))))
+                return InvalidResponse();
+            var member = members.Members.FirstOrDefault(m => m.User.Id == userId);
+            if (member is not null)
+            {
+                memberRoles.UnionWith(member.Roles);
+                found = true;
+                break;
+            }
+
+            if (members.Members.Count < 200) break;
+        }
+
+        if (!found)
+            return InvalidResponse();
+
+        return FluxerGuildAccessHelper.Compute(guild, userId, memberRoles);
+    }
+
     private sealed class GuildResponse
     {
         public required FluxerGuild? Guild { get; init; }

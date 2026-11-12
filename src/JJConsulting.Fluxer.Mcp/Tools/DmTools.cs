@@ -177,7 +177,8 @@ public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient adm
         }
 
         var result = await admin.GetMessagesAsync(channel.ChannelId, new FluxerPageRequest(limit, before: before), ct);
-        if (result is not FluxerMessagePage page) throw Unavailable();
+        if (result is not FluxerMessagePage page) 
+            throw Unavailable();
         var messages = page.Messages
             .Where(m => (start is null || m.Timestamp >= start) && (end is null || m.Timestamp < end))
             .OrderBy(m => m.Timestamp).ThenBy(m => long.Parse(m.Id)).Select(m => ProjectMessage(m, channel)).ToArray();

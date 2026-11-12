@@ -601,6 +601,52 @@ public class FluxerClientTests
         Assert.Empty(handler.Requests);
     }
 
+    [Theory]
+    [InlineData("66560", "0", true)]
+    [InlineData("66560", "1024", false)]
+    [InlineData("invalid", "0", false)]
+    public async Task Guild_Access_Uses_Typed_Responses_And_Separate_Credentials(string permissions, string deny, bool readable)
+    {
+        var guild = JsonSerializer.Serialize(new
+        {
+            id = "3000", nsfw = false, message_history_cutoff = (string?)null,
+            roles = new[] { new { id = "3000", permissions } },
+            channels = new[] { new { id = ChannelId, permission_overwrites = new[] {
+                new { id = UserId, type = 1, allow = "0", deny } } } }
+        });
+        var members = JsonSerializer.Serialize(new
+        {
+            members = new[] { new { user = new { id = UserId }, roles = Array.Empty<string>() } }
+        });
+        using var handler = new ScriptedHandler(
+            (_, _) => Task.FromResult(Json(guild)), (_, _) => Task.FromResult(Json(members)));
+        using var http = new HttpClient(handler);
+        var client = Admin(http);
+        var result = await client.GetReadableChannelsAsync("3000", UserId, OAuthToken);
+        if (permissions == "invalid")
+            Assert.Equal(FluxerFailure.InvalidResponse, Assert.IsType<FluxerError>(result.Value).Failure);
+        else
+            Assert.Equal(readable, Success(result).ReadableChannels.ContainsKey(ChannelId));
+        Assert.Equal("Bearer " + OAuthToken, handler.Requests[0].Authorization);
+        Assert.Equal("Admin " + AdminKey, handler.Requests[1].Authorization);
+        Assert.EndsWith("/v1/guilds/3000", handler.Requests[0].Url);
+        Assert.EndsWith("/v1/admin/guilds/3000/members?limit=200&offset=0", handler.Requests[1].Url);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("null")]
+    [InlineData("{\"id\":\"3000\",\"nsfw\":false,\"message_history_cutoff\":null,\"roles\":null,\"channels\":[]}")]
+    public async Task Invalid_Guild_Access_Response_Does_Not_Read_Members(string payload)
+    {
+        using var handler = new ScriptedHandler((_, _) => Task.FromResult(Json(payload)));
+        using var http = new HttpClient(handler);
+        var client = Admin(http);
+        var result = await client.GetReadableChannelsAsync("3000", UserId, OAuthToken);
+        Assert.Equal(FluxerFailure.InvalidResponse, Assert.IsType<FluxerError>(result.Value).Failure);
+        Assert.Single(handler.Requests);
+    }
+
     private static T Success<T>(FluxerResult<T> result)
     {
         return Assert.IsAssignableFrom<T>(result.Value);

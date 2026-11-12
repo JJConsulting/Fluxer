@@ -7,7 +7,7 @@
 @code = COPY_CODE_FROM_CLIENT_CALLBACK
 
 ### Start in a browser so the secure correlation cookie survives the Fluxer login.
-GET {{baseUrl}}/oauth/authorize?client_id={{clientId}}&redirect_uri={{clientRedirectUri}}&response_type=code&scope=identify&state=local-test&resource={{baseUrl}}/mcp&code_challenge={{challenge}}&code_challenge_method=S256
+GET {{baseUrl}}/oauth/authorize?client_id={{clientId}}&redirect_uri={{clientRedirectUri}}&response_type=code&scope=identify&state=local-test&resource={{baseUrl}}&code_challenge={{challenge}}&code_challenge_method=S256
 
 ### Upstream callback (normally called by Fluxer in the original browser).
 GET {{baseUrl}}/auth/fluxer/callback?code=UPSTREAM_CODE&state={{state}}
@@ -16,7 +16,7 @@ GET {{baseUrl}}/auth/fluxer/callback?code=UPSTREAM_CODE&state={{state}}
 POST {{baseUrl}}/oauth/token
 Content-Type: application/x-www-form-urlencoded
 
-grant_type=authorization_code&client_id={{clientId}}&code={{code}}&redirect_uri={{clientRedirectUri}}&code_verifier={{verifier}}&resource={{baseUrl}}/mcp
+grant_type=authorization_code&client_id={{clientId}}&code={{code}}&redirect_uri={{clientRedirectUri}}&code_verifier={{verifier}}&resource={{baseUrl}}
 
 ### Refresh a Fluxer token through the bridge.
 POST {{baseUrl}}/oauth/token

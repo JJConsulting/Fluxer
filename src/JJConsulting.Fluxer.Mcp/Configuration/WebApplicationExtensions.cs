@@ -27,7 +27,7 @@ internal static class WebApplicationExtensions
         app.UseAuthentication();
         app.Use(async (context, next) =>
         {
-            if (context.Request.Path.StartsWithSegments("/mcp") && context.User.Identity?.IsAuthenticated != true)
+            if (context.Request.Path == "/" && context.User.Identity?.IsAuthenticated != true)
             {
                 await context.ChallengeAsync();
                 return;
@@ -38,11 +38,9 @@ internal static class WebApplicationExtensions
 
         app.MapGet("/.well-known/oauth-protected-resource", (HttpRequest request) => Results.Json(new
         {
-            resource = fluxer.GetPublicUrl(request) + "/mcp", authorization_servers = new[] { fluxer.GetPublicUrl(request) },
+            resource = fluxer.GetPublicUrl(request), authorization_servers = new[] { fluxer.GetPublicUrl(request) },
             scopes_supported = new[] { FluxerOptions.Scope }, bearer_methods_supported = new[] { "header" }
         }));
-        app.MapGet("/.well-known/oauth-protected-resource/mcp",
-            () => Results.Redirect("/.well-known/oauth-protected-resource"));
         app.MapGet("/.well-known/oauth-authorization-server", (HttpRequest request) => Results.Json(new
         {
             issuer = fluxer.GetPublicUrl(request),
@@ -61,7 +59,7 @@ internal static class WebApplicationExtensions
         app.MapPost("/oauth/token", (HttpContext context, OAuthBridge bridge) => bridge.TokenAsync(context));
         app.MapPost("/oauth/revoke", (HttpContext context, OAuthBridge bridge) => bridge.RevokeAsync(context));
         app.MapGet("/health", () => Results.Ok());
-        app.MapMcp("/mcp");
+        app.MapMcp();
 
         return app;
     }

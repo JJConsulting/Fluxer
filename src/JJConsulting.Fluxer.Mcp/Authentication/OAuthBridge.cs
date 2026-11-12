@@ -42,7 +42,7 @@ public sealed class OAuthBridge(IOptions<FluxerOptions> settings, IHttpClientFac
         if (!challenge.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_'))
             return Error("invalid_request");
 
-        if (query["resource"] != options.GetPublicUrl(context.Request) + "/mcp")
+        if (query["resource"] != options.GetPublicUrl(context.Request))
             return Error("invalid_request");
         if (query["scope"] != FluxerOptions.Scope) return Error("invalid_scope");
 
@@ -57,7 +57,7 @@ public sealed class OAuthBridge(IOptions<FluxerOptions> settings, IHttpClientFac
             new Dictionary<string, string?>
             {
                 ["client_id"] = options.ClientId, ["redirect_uri"] = login.Callback,
-                ["response_type"] = "code", ["scope"] = FluxerOptions.Scope, ["state"] = key,
+                ["response_type"] = "code", ["scope"] = FluxerOptions.Scope + " guilds", ["state"] = key,
                 ["code_challenge"] = challenge, ["code_challenge_method"] = "S256", ["prompt"] = "consent"
             }));
     }
@@ -192,7 +192,7 @@ public sealed class OAuthBridge(IOptions<FluxerOptions> settings, IHttpClientFac
             if (form["client_id"] != options.ClientId || form.ContainsKey("client_secret"))
                 return new OAuthError("invalid_request");
 
-            if (form.ContainsKey("resource") && form["resource"] != options.GetPublicUrl(request) + "/mcp")
+            if (form.ContainsKey("resource") && form["resource"] != options.GetPublicUrl(request))
                 return new OAuthError("invalid_request");
             return form;
         }

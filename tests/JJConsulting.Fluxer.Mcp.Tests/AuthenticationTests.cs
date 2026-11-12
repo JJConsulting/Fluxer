@@ -125,7 +125,7 @@ public sealed class AuthenticationTests
     {
         using var factory = new McpFactory();
         using var client = factory.Browser();
-        using var response = await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), "/mcp"));
+        using var response = await client.SendAsync(new HttpRequestMessage(new HttpMethod(method), "/"));
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Equal(0, factory.Fluxer.Introspections);
     }
@@ -150,7 +150,7 @@ public sealed class AuthenticationTests
         using var factory = new McpFactory();
         using var client = factory.Browser();
         client.DefaultRequestHeaders.Add("Cookie", "access_token=first-user-token");
-        using var response = await client.GetAsync("/mcp?access_token=first-user-token");
+        using var response = await client.GetAsync("/?access_token=first-user-token");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.Equal(0, factory.Fluxer.Introspections);
     }
@@ -174,7 +174,7 @@ public sealed class AuthenticationTests
         using var client = factory.Browser();
         using var resource = await client.GetAsync("/.well-known/oauth-protected-resource");
         using var prm = JsonDocument.Parse(await resource.Content.ReadAsStringAsync());
-        Assert.Equal(McpFactory.Origin + "/mcp", prm.RootElement.GetProperty("resource").GetString());
+        Assert.Equal(McpFactory.Origin, prm.RootElement.GetProperty("resource").GetString());
         using var metadata = await client.GetAsync("/.well-known/oauth-authorization-server");
         var body = await metadata.Content.ReadAsStringAsync();
         using var json = JsonDocument.Parse(body);
@@ -201,13 +201,13 @@ public sealed class AuthenticationTests
         using var resource = await client.GetAsync("/.well-known/oauth-protected-resource");
         Assert.Equal(HttpStatusCode.OK, resource.StatusCode);
         using var prm = JsonDocument.Parse(await resource.Content.ReadAsStringAsync());
-        Assert.Equal(expected + "/mcp", prm.RootElement.GetProperty("resource").GetString());
+        Assert.Equal(expected, prm.RootElement.GetProperty("resource").GetString());
         Assert.Equal(expected, prm.RootElement.GetProperty("authorization_servers")[0].GetString());
         using var metadata = await client.GetAsync("/.well-known/oauth-authorization-server");
         using var server = JsonDocument.Parse(await metadata.Content.ReadAsStringAsync());
         Assert.Equal(expected, server.RootElement.GetProperty("issuer").GetString());
         Assert.True(server.RootElement.GetProperty("authorization_response_iss_parameter_supported").GetBoolean());
-        using var challenge = await client.GetAsync("/mcp");
+        using var challenge = await client.GetAsync("/");
         Assert.Equal(HttpStatusCode.Unauthorized, challenge.StatusCode);
         Assert.Contains(expected + "/.well-known/oauth-protected-resource", challenge.Headers.WwwAuthenticate.ToString());
     }

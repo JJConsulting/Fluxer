@@ -16,7 +16,7 @@ public sealed class OAuthBridgeTests
     private static Dictionary<string, string?> Parameters() => new()
     {
         ["client_id"] = "123", ["redirect_uri"] = McpFactory.Callback, ["response_type"] = "code",
-        ["scope"] = "identify", ["state"] = "chatgpt-state", ["resource"] = McpFactory.Origin + "/mcp",
+        ["scope"] = "identify", ["state"] = "chatgpt-state", ["resource"] = McpFactory.Origin,
         ["code_challenge"] = Challenge, ["code_challenge_method"] = "S256"
     };
 
@@ -30,7 +30,7 @@ public sealed class OAuthBridgeTests
         Assert.Equal(McpFactory.Origin + "/auth/fluxer/callback", query["redirect_uri"]);
         Assert.Equal(Challenge, query["code_challenge"]);
         Assert.Equal("S256", query["code_challenge_method"]);
-        Assert.Equal("identify", query["scope"]);
+        Assert.Equal("identify guilds", query["scope"]);
         Assert.NotEqual("chatgpt-state", query["state"].ToString());
         Assert.DoesNotContain("fixture-secret", destination.AbsoluteUri);
         Assert.All(response.Headers.GetValues("Set-Cookie"), cookie =>
@@ -58,7 +58,7 @@ public sealed class OAuthBridgeTests
     private static Dictionary<string, string> TokenForm(string code, string? verifier = null) => new()
     {
         ["client_id"] = "123", ["grant_type"] = "authorization_code", ["code"] = code,
-        ["redirect_uri"] = McpFactory.Callback, ["resource"] = McpFactory.Origin + "/mcp",
+        ["redirect_uri"] = McpFactory.Callback, ["resource"] = McpFactory.Origin,
         ["code_verifier"] = verifier ?? Verifier
     };
 
@@ -138,7 +138,8 @@ public sealed class OAuthBridgeTests
     [InlineData("client_id", "999")]
     [InlineData("code_challenge_method", "plain")]
     [InlineData("code_challenge", "invalid")]
-    [InlineData("resource", "https://attacker.test/mcp")]
+    [InlineData("resource", "https://attacker.test/")]
+    [InlineData("resource", McpFactory.Origin + "/mcp")]
     [InlineData("scope", "email")]
     [InlineData("response_type", "token")]
     [InlineData("state", "")]
@@ -180,7 +181,8 @@ public sealed class OAuthBridgeTests
     [InlineData("code_verifier", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")]
     [InlineData("redirect_uri", "https://attacker.test/callback")]
     [InlineData("client_id", "999")]
-    [InlineData("resource", "https://attacker.test/mcp")]
+    [InlineData("resource", "https://attacker.test/")]
+    [InlineData("resource", McpFactory.Origin + "/mcp")]
     [InlineData("code", "fixture-code")]
     [InlineData("grant_type", "client_credentials")]
     [InlineData("client_secret", "injected")]

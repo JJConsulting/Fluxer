@@ -253,9 +253,16 @@ public sealed class DmTools(IHttpContextAccessor accessor, FluxerAdminClient adm
         return id!;
     }
 
-    private static bool IsAuthorized(FluxerDmChannel channel, string userId) =>
-        channel is { ChannelType: 1, ChannelNsfw: false, RecipientIds.Count: 2 } &&
-        channel.RecipientIds.Distinct(StringComparer.Ordinal).Count() == 2 && channel.RecipientIds.Contains(userId);
+    private static bool IsAuthorized(FluxerDmChannel channel, string userId)
+    {
+        if (channel is not { ChannelType: 1, ChannelNsfw: false, RecipientIds.Count: 2 }) 
+            return false;
+
+        if (channel.RecipientIds.Distinct(StringComparer.Ordinal).Count() != 2)
+            return false;
+        
+        return channel.RecipientIds.Contains(userId);
+    }
 
     private static void ValidatePage(int limit, int maximum, string? before)
     {

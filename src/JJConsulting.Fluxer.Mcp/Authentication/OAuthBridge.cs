@@ -102,8 +102,12 @@ public sealed class OAuthBridge(IOptions<FluxerOptions> settings, IHttpClientFac
     public async Task<IResult> TokenAsync(HttpContext context)
     {
         var formResult = await ReadFormAsync(context);
-        if (formResult is OAuthError error) return Error(error.Error, error.StatusCode);
-        if (formResult is not IFormCollection form) return Error("invalid_request");
+        
+        if (formResult is OAuthError error) 
+            return Error(error.Error, error.StatusCode);
+        if (formResult is not IFormCollection form)
+            return Error("invalid_request");
+        
         var fields = new Dictionary<string, string>();
         var grant = form["grant_type"].ToString();
         if (grant == "authorization_code")
@@ -150,13 +154,22 @@ public sealed class OAuthBridge(IOptions<FluxerOptions> settings, IHttpClientFac
     public async Task<IResult> RevokeAsync(HttpContext context)
     {
         var formResult = await ReadFormAsync(context);
-        if (formResult is OAuthError error) return Error(error.Error, error.StatusCode);
+        if (formResult is OAuthError error) 
+            return Error(error.Error, error.StatusCode);
         if (formResult is not IFormCollection form || !Credential(form["token"].ToString()))
             return Error("invalid_request");
+        
         var hint = form["token_type_hint"].ToString();
-        if (hint is not ("" or "access_token" or "refresh_token")) return Error("invalid_request");
-        var fields = new Dictionary<string, string> { ["token"] = form["token"].ToString() };
-        if (hint.Length > 0) fields["token_type_hint"] = hint;
+        if (hint is not ("" or "access_token" or "refresh_token")) 
+            return Error("invalid_request");
+        
+        var fields = new Dictionary<string, string>
+        {
+            ["token"] = form["token"].ToString()
+        };
+        if (hint.Length > 0)
+            fields["token_type_hint"] = hint;
+        
         return ToHttpResult(await ForwardAsync(context, fields, "token/revoke"));
     }
 
@@ -235,13 +248,20 @@ public sealed class OAuthBridge(IOptions<FluxerOptions> settings, IHttpClientFac
         }
     }
 
-    private static IResult ToHttpResult(OAuthResult result) => result switch
+    private static IResult ToHttpResult(OAuthResult result)
     {
-        TokenResponse token => Results.Json(token),
-        Revoked => Results.Ok(),
-        OAuthError error => Error(error.Error, error.StatusCode),
-        _ => Error("server_error", 502)
-    };
+        switch (result)
+        {
+            case TokenResponse token:
+                return Results.Json(token);
+            case Revoked:
+                return Results.Ok();
+            case OAuthError error:
+                return Error(error.Error, error.StatusCode);
+            default:
+                return Error("server_error", 502);
+        }
+    }
 
     private bool Store(string key, object value, TimeSpan lifetime)
     {
